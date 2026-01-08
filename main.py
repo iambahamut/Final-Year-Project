@@ -13,9 +13,9 @@ MIN_HAND_PRESENCE_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
 MODEL_PATH = 'hand_landmarker.task'
 
-# Fist detection thresholds
-FIST_CURL_THRESHOLD = 0.7  # Finger tip must be this ratio closer to wrist than base
-FIST_MIN_FINGERS = 3       # Minimum fingers curled to count as fist
+# Open palm detection thresholds
+PALM_EXTENSION_THRESHOLD = 1.1  # Finger tip must be farther from wrist than base
+PALM_MIN_FINGERS = 3  # Minimum fingers extended to count as open palm
 
 # Movement thresholds (normalized coordinates)
 MOVEMENT_THRESHOLD_ACTIVATE = 0.12   # Distance from reference to activate key
@@ -45,22 +45,22 @@ result_lock = False
 # Keyboard control state
 keyboard_controller = None
 right_hand_state = {
-    'is_fist': False,
-    'reference_point': None,  # (x, y, z) when fist first formed
+    'is_palm_open': False,
+    'reference_point': None,  # (x, y, z) when open palm first detected
     'active_keys': set(),      # Currently pressed keys
     'last_seen_time': None,    # Last time right hand was detected
     'control_active': False    # Whether keyboard control is active
 }
 
 
-def is_hand_fist(hand_landmarks):
+def is_hand_open_palm(hand_landmarks):
     """
-    Detect if hand is in fist position by checking if 4 fingers are curled.
-    Returns True if at least 3 of 4 fingers (index, middle, ring, pinky) are curled.
-    Thumb is ignored for relaxed fist detection.
+    Detect if hand is in open palm position by checking if fingers are extended.
+    Returns True if at least 3 of 4 fingers (index, middle, ring, pinky) are extended.
+    Thumb is ignored for relaxed palm detection.
     """
     wrist = hand_landmarks[0]
-    fingers_curled = 0
+    fingers_extended = 0
 
     # Check each finger (excluding thumb)
     finger_tips = [8, 12, 16, 20]    # Index, Middle, Ring, Pinky tips
@@ -74,11 +74,11 @@ def is_hand_fist(hand_landmarks):
         tip_dist = ((tip.x - wrist.x)**2 + (tip.y - wrist.y)**2 + (tip.z - wrist.z)**2)**0.5
         base_dist = ((base.x - wrist.x)**2 + (base.y - wrist.y)**2 + (base.z - wrist.z)**2)**0.5
 
-        # Finger is curled if tip is closer to wrist than base (by threshold ratio)
-        if tip_dist < base_dist * FIST_CURL_THRESHOLD:
-            fingers_curled += 1
+        # Finger is extended if tip is farther from wrist than base
+        if tip_dist > base_dist * PALM_EXTENSION_THRESHOLD:
+            fingers_extended += 1
 
-    return fingers_curled >= FIST_MIN_FINGERS
+    return fingers_extended >= PALM_MIN_FINGERS
 
 
 def update_keyboard_controls(hand_landmarks):
@@ -165,28 +165,30 @@ def process_right_hand_control(detection_result):
                 right_hand_found = True
                 right_hand_state['last_seen_time'] = current_time
 
-                # Check fist state
-                is_fist = is_hand_fist(hand_landmarks)
+                # Check palm state
+                is_palm_open = is_hand_open_palm(hand_landmarks)
 
-                # Fist just formed - set reference point
-                if is_fist and not right_hand_state['is_fist']:
+                # Set reference point only if not already set
+                if is_palm_open and right_hand_state['reference_point'] is None:
                     wrist = hand_landmarks[0]
                     right_hand_state['reference_point'] = (wrist.x, wrist.y, wrist.z)
+                    print("Reference point set - static position locked")
+
+                # Open palm detected - activate control
+                if is_palm_open and not right_hand_state['is_palm_open']:
                     right_hand_state['control_active'] = True
-                    right_hand_state['is_fist'] = True
-                    print("Control activated - fist detected")
+                    right_hand_state['is_palm_open'] = True
+                    print("Control activated - open palm detected")
 
-                # Fist released - clear reference and release keys
-                elif not is_fist and right_hand_state['is_fist']:
-                    release_all_keys()
-                    right_hand_state['reference_point'] = None
-                    right_hand_state['control_active'] = False
-                    right_hand_state['is_fist'] = False
-                    print("Control deactivated - hand opened")
-
-                # Fist maintained - update controls
-                elif is_fist and right_hand_state['is_fist']:
+                # Palm is open - update controls (no deactivation on close)
+                if is_palm_open and right_hand_state['is_palm_open']:
                     update_keyboard_controls(hand_landmarks)
+
+                # Palm closed but control stays active if reference exists
+                elif not is_palm_open and right_hand_state['is_palm_open']:
+                    right_hand_state['is_palm_open'] = False
+                    # Note: control_active and reference_point stay set
+                    # Keys will continue to be controlled based on hand position
 
                 break
 
@@ -198,7 +200,7 @@ def process_right_hand_control(detection_result):
                 print("Hand lost - releasing controls")
                 release_all_keys()
                 right_hand_state['control_active'] = False
-                right_hand_state['is_fist'] = False
+                right_hand_state['is_palm_open'] = False
                 # Keep reference_point for potential return
 
 
@@ -315,15 +317,15 @@ def draw_landmarks_on_image(image, detection_result):
         )
 
         # Draw control status for right hand
-        if hand_label == "Right" and right_hand_state['is_fist']:
-            status_text = "CONTROLLING" if right_hand_state['control_active'] else "FIST"
+        if hand_label == "Right" and right_hand_state['control_active']:
+            status_text = "CONTROLLING - PALM" if right_hand_state['is_palm_open'] else "CONTROLLING"
             cv2.putText(
                 image,
                 status_text,
                 (wrist_x - 50, wrist_y + 20),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
-                (0, 255, 0) if right_hand_state['control_active'] else (0, 165, 255),
+                (0, 255, 0) if right_hand_state['is_palm_open'] else (0, 200, 200),
                 2,
                 cv2.LINE_AA
             )
@@ -403,9 +405,10 @@ def main():
     print("\nGesture Recognition System Started!")
     print("Controls:")
     print("  - Press 'Q' or 'ESC' to quit")
-    print("  - Make a FIST with RIGHT hand to activate keyboard control")
-    print("  - Move fist: LEFT/RIGHT (A/D), FORWARD/BACK (W/S)")
-    print("  - Open hand to deactivate control")
+    print("  - Press 'R' to reset reference point")
+    print("  - Show OPEN PALM with RIGHT hand to set/activate keyboard control")
+    print("  - Move hand: LEFT/RIGHT (A/D), FORWARD/BACK (W/S)")
+    print("  - Control stays active once reference point is set")
     print("\nStarting camera feed...\n")
 
     # FPS calculation variables
@@ -456,6 +459,13 @@ def main():
             if key == ord('q') or key == ord('Q') or key == 27:  # 27 is ESC
                 print("\nShutting down...")
                 break
+            elif key == ord('r') or key == ord('R'):
+                # Reset reference point
+                release_all_keys()
+                right_hand_state['reference_point'] = None
+                right_hand_state['control_active'] = False
+                right_hand_state['is_palm_open'] = False
+                print("\nReference point reset - show open palm to set new reference")
 
             frame_count += 1
 
