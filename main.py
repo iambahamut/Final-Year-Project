@@ -3,7 +3,6 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import time
-from pynput.keyboard import Controller
 
 # Constants
 CAMERA_INDEX = 0
@@ -138,11 +137,11 @@ def update_keyboard_controls(hand_landmarks):
 
     # Press new keys
     for key in target_keys - right_hand_state['active_keys']:
-        keyboard_controller.press(key)
+        print(f"KEY PRESS: {key.upper()}")
 
     # Release old keys
     for key in right_hand_state['active_keys'] - target_keys:
-        keyboard_controller.release(key)
+        print(f"KEY RELEASE: {key.upper()}")
 
     # Update active keys
     right_hand_state['active_keys'] = target_keys
@@ -208,7 +207,7 @@ def release_all_keys():
     global right_hand_state, keyboard_controller
 
     for key in right_hand_state['active_keys']:
-        keyboard_controller.release(key)
+        print(f"KEY RELEASE: {key.upper()}")
 
     right_hand_state['active_keys'] = set()
 
@@ -375,10 +374,10 @@ def main():
     # Configure camera settings
     width, height = get_optimal_camera_settings(cap)
 
-    # Initialize keyboard controller
+    # Initialize keyboard controller (using print for now)
     global keyboard_controller
-    keyboard_controller = Controller()
-    print("Keyboard controller initialized")
+    keyboard_controller = True  # Flag to indicate controller is ready
+    print("Keyboard controller initialized (print mode)")
 
     # Initialize MediaPipe HandLandmarker
     print("Initializing HandLandmarker...")
