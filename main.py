@@ -17,6 +17,10 @@ MODEL_PATH = 'hand_landmarker.task'
 PALM_EXTENSION_THRESHOLD = 1.1  # Finger tip must be farther from wrist than base
 PALM_MIN_FINGERS = 3  # Minimum fingers extended to count as open palm
 
+# Hand size depth detection thresholds
+HAND_SIZE_THRESHOLD_ACTIVATE = 0.12   # 12% size change to activate key
+HAND_SIZE_THRESHOLD_RELEASE = 0.08    # 8% size change to release key (hysteresis)
+
 # Movement thresholds (normalized coordinates)
 MOVEMENT_THRESHOLD_ACTIVATE = 0.12   # Distance from reference to activate key
 MOVEMENT_THRESHOLD_RELEASE = 0.08    # Distance from reference to release key (hysteresis)
@@ -81,6 +85,38 @@ def is_hand_open_palm(hand_landmarks):
     return fingers_extended >= PALM_MIN_FINGERS
 
 
+def calculate_palm_width(hand_landmarks):
+    """
+    Calculate palm width as distance between index and pinky finger bases.
+    Uses 2D distance (X-Y only) to measure apparent size on camera plane.
+    Larger width = hand closer to camera, smaller width = hand farther away.
+
+    Args:
+        hand_landmarks: MediaPipe hand landmarks (21 points)
+
+    Returns:
+        float: Palm width in normalized coordinates, or None if calculation fails
+    """
+    try:
+        index_base = hand_landmarks[5]   # Index finger MCP joint
+        pinky_base = hand_landmarks[17]  # Pinky MCP joint
+
+        # Calculate 2D Euclidean distance (X-Y plane only)
+        palm_width = ((index_base.x - pinky_base.x)**2 +
+                      (index_base.y - pinky_base.y)**2)**0.5
+
+        # Sanity check: palm width should be reasonable (0.05 to 0.3 normalized)
+        if palm_width < 0.05 or palm_width > 0.3:
+            print(f"Warning: Unusual palm width detected: {palm_width:.3f}")
+            return None
+
+        return palm_width
+
+    except (IndexError, AttributeError) as e:
+        print(f"Error calculating palm width: {e}")
+        return None
+
+
 def update_keyboard_controls(hand_landmarks):
     """
     Update keyboard controls based on right hand position relative to reference point.
@@ -92,11 +128,17 @@ def update_keyboard_controls(hand_landmarks):
         return
 
     wrist = hand_landmarks[0]
-    ref_x, ref_y, ref_z = right_hand_state['reference_point']
+    ref_x, ref_y, ref_palm_width = right_hand_state['reference_point']
 
     # Calculate deltas from reference point
     delta_x = wrist.x - ref_x
-    delta_z = wrist.z - ref_z
+
+    # Calculate hand size delta (percentage change from reference)
+    current_palm_width = calculate_palm_width(hand_landmarks)
+    if current_palm_width is None:
+        return  # Skip this frame if calculation failed
+
+    delta_size_percent = (current_palm_width - ref_palm_width) / ref_palm_width
 
     # Determine which keys should be active based on current thresholds
     target_keys = set()
@@ -118,19 +160,21 @@ def update_keyboard_controls(hand_landmarks):
         elif 'd' in right_hand_state['active_keys']:
             target_keys.add('d')
 
-    # Check Z-axis (forward/backward)
-    if delta_z < -MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add('w')  # Move toward camera (forward)
-    elif delta_z > MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add('s')  # Move away (backward)
+    # Check hand size (forward/backward depth)
+    # Larger hand (positive delta) = closer = W key
+    # Smaller hand (negative delta) = farther = S key
+    if delta_size_percent > HAND_SIZE_THRESHOLD_ACTIVATE:
+        target_keys.add('w')  # Hand larger (closer to camera)
+    elif delta_size_percent < -HAND_SIZE_THRESHOLD_ACTIVATE:
+        target_keys.add('s')  # Hand smaller (farther from camera)
     else:
-        # Hysteresis for Z-axis
-        if 'w' in right_hand_state['active_keys'] and delta_z > -MOVEMENT_THRESHOLD_RELEASE:
+        # Hysteresis for hand size
+        if 'w' in right_hand_state['active_keys'] and delta_size_percent < HAND_SIZE_THRESHOLD_RELEASE:
             pass
         elif 'w' in right_hand_state['active_keys']:
             target_keys.add('w')
 
-        if 's' in right_hand_state['active_keys'] and delta_z < MOVEMENT_THRESHOLD_RELEASE:
+        if 's' in right_hand_state['active_keys'] and delta_size_percent > -HAND_SIZE_THRESHOLD_RELEASE:
             pass
         elif 's' in right_hand_state['active_keys']:
             target_keys.add('s')
@@ -171,8 +215,12 @@ def process_right_hand_control(detection_result):
                 # Set reference point only if not already set
                 if is_palm_open and right_hand_state['reference_point'] is None:
                     wrist = hand_landmarks[0]
-                    right_hand_state['reference_point'] = (wrist.x, wrist.y, wrist.z)
-                    print("Reference point set - static position locked")
+                    palm_width = calculate_palm_width(hand_landmarks)
+                    if palm_width is not None:
+                        right_hand_state['reference_point'] = (wrist.x, wrist.y, palm_width)
+                        print(f"Reference point set - static position locked (palm width: {palm_width:.3f})")
+                    else:
+                        print("Warning: Could not calculate palm width for reference point")
 
                 # Open palm detected - activate control
                 if is_palm_open and not right_hand_state['is_palm_open']:
