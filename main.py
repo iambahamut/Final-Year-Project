@@ -81,6 +81,32 @@ def is_hand_open_palm(hand_landmarks):
     return fingers_extended >= PALM_MIN_FINGERS
 
 
+def calculate_palm_center(hand_landmarks):
+    """
+    Calculate the center of the palm using a 5-point average.
+    Uses wrist (0) and all four finger bases (5, 9, 13, 17) for a stable,
+    geometrically centered tracking point.
+
+    Args:
+        hand_landmarks: MediaPipe hand landmarks (21 points)
+
+    Returns:
+        tuple: (center_x, center_y) normalized coordinates
+    """
+    # Key palm landmarks: wrist + finger bases
+    wrist = hand_landmarks[0]
+    index_base = hand_landmarks[5]
+    middle_base = hand_landmarks[9]
+    ring_base = hand_landmarks[13]
+    pinky_base = hand_landmarks[17]
+
+    # Calculate average position
+    center_x = (wrist.x + index_base.x + middle_base.x + ring_base.x + pinky_base.x) / 5
+    center_y = (wrist.y + index_base.y + middle_base.y + ring_base.y + pinky_base.y) / 5
+
+    return center_x, center_y
+
+
 def update_keyboard_controls(hand_landmarks):
     """
     Update keyboard controls based on right hand position relative to reference point.
@@ -91,12 +117,13 @@ def update_keyboard_controls(hand_landmarks):
     if not right_hand_state['control_active'] or not right_hand_state['reference_point']:
         return
 
-    wrist = hand_landmarks[0]
+    # Calculate current palm center position
+    palm_center_x, palm_center_y = calculate_palm_center(hand_landmarks)
     ref_x, ref_y = right_hand_state['reference_point']
 
     # Calculate deltas from reference point
-    delta_x = wrist.x - ref_x
-    delta_y = wrist.y - ref_y
+    delta_x = palm_center_x - ref_x
+    delta_y = palm_center_y - ref_y
 
     # Determine which keys should be active based on current thresholds
     target_keys = set()
@@ -172,9 +199,9 @@ def process_right_hand_control(detection_result):
 
                 # Set reference point only if not already set
                 if is_palm_open and right_hand_state['reference_point'] is None:
-                    wrist = hand_landmarks[0]
-                    right_hand_state['reference_point'] = (wrist.x, wrist.y)
-                    print(f"Reference point set - static position locked at ({wrist.x:.3f}, {wrist.y:.3f})")
+                    palm_center_x, palm_center_y = calculate_palm_center(hand_landmarks)
+                    right_hand_state['reference_point'] = (palm_center_x, palm_center_y)
+                    print(f"Reference point set - palm center locked at ({palm_center_x:.3f}, {palm_center_y:.3f})")
 
                 # Open palm detected - activate control
                 if is_palm_open and not right_hand_state['is_palm_open']:
