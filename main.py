@@ -1,8 +1,9 @@
+import time
+
 import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-import time
 
 # Constants
 CAMERA_INDEX = 0
@@ -11,32 +12,50 @@ DESIRED_HEIGHT = 720
 MIN_HAND_DETECTION_CONFIDENCE = 0.7
 MIN_HAND_PRESENCE_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
-MODEL_PATH = 'hand_landmarker.task'
+MODEL_PATH = "hand_landmarker.task"
 
 # Open palm detection thresholds
 PALM_EXTENSION_THRESHOLD = 1.1  # Finger tip must be farther from wrist than base
 PALM_MIN_FINGERS = 3  # Minimum fingers extended to count as open palm
 
 # Movement thresholds (normalized coordinates)
-MOVEMENT_THRESHOLD_ACTIVATE = 0.12   # Distance from reference to activate key
-MOVEMENT_THRESHOLD_RELEASE = 0.08    # Distance from reference to release key (hysteresis)
+MOVEMENT_THRESHOLD_ACTIVATE = 0.12  # Distance from reference to activate key
+MOVEMENT_THRESHOLD_RELEASE = 0.08  # Distance from reference to release key (hysteresis)
 
 # Hand tracking loss grace period
 HAND_LOSS_GRACE_PERIOD = 2.0  # seconds
 
 # Colors (BGR format)
-COLOR_LEFT_HAND = (255, 0, 0)   # Blue
+COLOR_LEFT_HAND = (255, 0, 0)  # Blue
 COLOR_RIGHT_HAND = (0, 0, 255)  # Red
-COLOR_FPS = (0, 255, 0)         # Green
+COLOR_FPS = (0, 255, 0)  # Green
 
 # Hand connections (pairs of landmark indices to draw lines between)
-HAND_CONNECTIONS = frozenset([
-    (0, 1), (1, 2), (2, 3), (3, 4),           # Thumb
-    (0, 5), (5, 6), (6, 7), (7, 8),           # Index finger
-    (5, 9), (9, 10), (10, 11), (11, 12),      # Middle finger
-    (9, 13), (13, 14), (14, 15), (15, 16),    # Ring finger
-    (13, 17), (0, 17), (17, 18), (18, 19), (19, 20)  # Pinky
-])
+HAND_CONNECTIONS = frozenset(
+    [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),  # Thumb
+        (0, 5),
+        (5, 6),
+        (6, 7),
+        (7, 8),  # Index finger
+        (5, 9),
+        (9, 10),
+        (10, 11),
+        (11, 12),  # Middle finger
+        (9, 13),
+        (13, 14),
+        (14, 15),
+        (15, 16),  # Ring finger
+        (13, 17),
+        (0, 17),
+        (17, 18),
+        (18, 19),
+        (19, 20),  # Pinky
+    ]
+)
 
 # Global variable to store detection results from callback
 detection_result = None
@@ -45,11 +64,11 @@ result_lock = False
 # Keyboard control state
 keyboard_controller = None
 right_hand_state = {
-    'is_palm_open': False,
-    'reference_point': None,  # (x, y, z) when open palm first detected
-    'active_keys': set(),      # Currently pressed keys
-    'last_seen_time': None,    # Last time right hand was detected
-    'control_active': False    # Whether keyboard control is active
+    "is_palm_open": False,
+    "reference_point": None,  # (x, y, z) when open palm first detected
+    "active_keys": set(),  # Currently pressed keys
+    "last_seen_time": None,  # Last time right hand was detected
+    "control_active": False,  # Whether keyboard control is active
 }
 
 
@@ -63,16 +82,20 @@ def is_hand_open_palm(hand_landmarks):
     fingers_extended = 0
 
     # Check each finger (excluding thumb)
-    finger_tips = [8, 12, 16, 20]    # Index, Middle, Ring, Pinky tips
-    finger_bases = [5, 9, 13, 17]     # Corresponding MCP joints
+    finger_tips = [8, 12, 16, 20]  # Index, Middle, Ring, Pinky tips
+    finger_bases = [5, 9, 13, 17]  # Corresponding MCP joints
 
     for tip_idx, base_idx in zip(finger_tips, finger_bases):
         tip = hand_landmarks[tip_idx]
         base = hand_landmarks[base_idx]
 
         # Calculate distance from wrist
-        tip_dist = ((tip.x - wrist.x)**2 + (tip.y - wrist.y)**2 + (tip.z - wrist.z)**2)**0.5
-        base_dist = ((base.x - wrist.x)**2 + (base.y - wrist.y)**2 + (base.z - wrist.z)**2)**0.5
+        tip_dist = (
+            (tip.x - wrist.x) ** 2 + (tip.y - wrist.y) ** 2 + (tip.z - wrist.z) ** 2
+        ) ** 0.5
+        base_dist = (
+            (base.x - wrist.x) ** 2 + (base.y - wrist.y) ** 2 + (base.z - wrist.z) ** 2
+        ) ** 0.5
 
         # Finger is extended if tip is farther from wrist than base
         if tip_dist > base_dist * PALM_EXTENSION_THRESHOLD:
@@ -114,12 +137,15 @@ def update_keyboard_controls(hand_landmarks):
     """
     global right_hand_state, keyboard_controller
 
-    if not right_hand_state['control_active'] or not right_hand_state['reference_point']:
+    if (
+        not right_hand_state["control_active"]
+        or not right_hand_state["reference_point"]
+    ):
         return
 
     # Calculate current palm center position
     palm_center_x, palm_center_y = calculate_palm_center(hand_landmarks)
-    ref_x, ref_y = right_hand_state['reference_point']
+    ref_x, ref_y = right_hand_state["reference_point"]
 
     # Calculate deltas from reference point
     delta_x = palm_center_x - ref_x
@@ -130,50 +156,62 @@ def update_keyboard_controls(hand_landmarks):
 
     # Check X-axis (left/right)
     if delta_x < -MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add('a')  # Move left
+        target_keys.add("d")  # Move left
     elif delta_x > MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add('d')  # Move right
+        target_keys.add("a")  # Move right
     else:
         # Hysteresis: only release if within smaller threshold
-        if 'a' in right_hand_state['active_keys'] and delta_x > -MOVEMENT_THRESHOLD_RELEASE:
+        if (
+            "a" in right_hand_state["active_keys"]
+            and delta_x > -MOVEMENT_THRESHOLD_RELEASE
+        ):
             pass  # Will be removed below
-        elif 'a' in right_hand_state['active_keys']:
-            target_keys.add('a')
+        elif "a" in right_hand_state["active_keys"]:
+            target_keys.add("a")
 
-        if 'd' in right_hand_state['active_keys'] and delta_x < MOVEMENT_THRESHOLD_RELEASE:
+        if (
+            "d" in right_hand_state["active_keys"]
+            and delta_x < MOVEMENT_THRESHOLD_RELEASE
+        ):
             pass  # Will be removed below
-        elif 'd' in right_hand_state['active_keys']:
-            target_keys.add('d')
+        elif "d" in right_hand_state["active_keys"]:
+            target_keys.add("d")
 
     # Check Y-axis (up/down - vertical movement)
     # Smaller Y value = palm moved UP = W key (forward)
     # Larger Y value = palm moved DOWN = S key (backward)
     if delta_y < -MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add('w')  # Palm moved up
+        target_keys.add("w")  # Palm moved up
     elif delta_y > MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add('s')  # Palm moved down
+        target_keys.add("s")  # Palm moved down
     else:
         # Hysteresis for Y-axis
-        if 'w' in right_hand_state['active_keys'] and delta_y > -MOVEMENT_THRESHOLD_RELEASE:
+        if (
+            "w" in right_hand_state["active_keys"]
+            and delta_y > -MOVEMENT_THRESHOLD_RELEASE
+        ):
             pass
-        elif 'w' in right_hand_state['active_keys']:
-            target_keys.add('w')
+        elif "w" in right_hand_state["active_keys"]:
+            target_keys.add("w")
 
-        if 's' in right_hand_state['active_keys'] and delta_y < MOVEMENT_THRESHOLD_RELEASE:
+        if (
+            "s" in right_hand_state["active_keys"]
+            and delta_y < MOVEMENT_THRESHOLD_RELEASE
+        ):
             pass
-        elif 's' in right_hand_state['active_keys']:
-            target_keys.add('s')
+        elif "s" in right_hand_state["active_keys"]:
+            target_keys.add("s")
 
     # Press new keys
-    for key in target_keys - right_hand_state['active_keys']:
+    for key in target_keys - right_hand_state["active_keys"]:
         print(f"KEY PRESS: {key.upper()}")
 
     # Release old keys
-    for key in right_hand_state['active_keys'] - target_keys:
+    for key in right_hand_state["active_keys"] - target_keys:
         print(f"KEY RELEASE: {key.upper()}")
 
     # Update active keys
-    right_hand_state['active_keys'] = target_keys
+    right_hand_state["active_keys"] = target_keys
 
 
 def process_right_hand_control(detection_result):
@@ -192,44 +230,46 @@ def process_right_hand_control(detection_result):
             handedness = detection_result.handedness[idx][0]
             if handedness.category_name == "Right":
                 right_hand_found = True
-                right_hand_state['last_seen_time'] = current_time
+                right_hand_state["last_seen_time"] = current_time
 
                 # Check palm state
                 is_palm_open = is_hand_open_palm(hand_landmarks)
 
                 # Set reference point only if not already set
-                if is_palm_open and right_hand_state['reference_point'] is None:
+                if is_palm_open and right_hand_state["reference_point"] is None:
                     palm_center_x, palm_center_y = calculate_palm_center(hand_landmarks)
-                    right_hand_state['reference_point'] = (palm_center_x, palm_center_y)
-                    print(f"Reference point set - palm center locked at ({palm_center_x:.3f}, {palm_center_y:.3f})")
+                    right_hand_state["reference_point"] = (palm_center_x, palm_center_y)
+                    print(
+                        f"Reference point set - palm center locked at ({palm_center_x:.3f}, {palm_center_y:.3f})"
+                    )
 
                 # Open palm detected - activate control
-                if is_palm_open and not right_hand_state['is_palm_open']:
-                    right_hand_state['control_active'] = True
-                    right_hand_state['is_palm_open'] = True
+                if is_palm_open and not right_hand_state["is_palm_open"]:
+                    right_hand_state["control_active"] = True
+                    right_hand_state["is_palm_open"] = True
                     print("Control activated - open palm detected")
 
                 # Palm is open - update controls (no deactivation on close)
-                if is_palm_open and right_hand_state['is_palm_open']:
+                if is_palm_open and right_hand_state["is_palm_open"]:
                     update_keyboard_controls(hand_landmarks)
 
                 # Palm closed but control stays active if reference exists
-                elif not is_palm_open and right_hand_state['is_palm_open']:
-                    right_hand_state['is_palm_open'] = False
+                elif not is_palm_open and right_hand_state["is_palm_open"]:
+                    right_hand_state["is_palm_open"] = False
                     # Note: control_active and reference_point stay set
                     # Keys will continue to be controlled based on hand position
 
                 break
 
     # Handle hand tracking loss with grace period
-    if not right_hand_found and right_hand_state['control_active']:
-        if right_hand_state['last_seen_time']:
-            time_since_seen = current_time - right_hand_state['last_seen_time']
+    if not right_hand_found and right_hand_state["control_active"]:
+        if right_hand_state["last_seen_time"]:
+            time_since_seen = current_time - right_hand_state["last_seen_time"]
             if time_since_seen > HAND_LOSS_GRACE_PERIOD:
                 print("Hand lost - releasing controls")
                 release_all_keys()
-                right_hand_state['control_active'] = False
-                right_hand_state['is_palm_open'] = False
+                right_hand_state["control_active"] = False
+                right_hand_state["is_palm_open"] = False
                 # Keep reference_point for potential return
 
 
@@ -237,10 +277,10 @@ def release_all_keys():
     """Release all currently pressed keys."""
     global right_hand_state, keyboard_controller
 
-    for key in right_hand_state['active_keys']:
+    for key in right_hand_state["active_keys"]:
         print(f"KEY RELEASE: {key.upper()}")
 
-    right_hand_state['active_keys'] = set()
+    right_hand_state["active_keys"] = set()
 
 
 def get_optimal_camera_settings(cap):
@@ -248,6 +288,7 @@ def get_optimal_camera_settings(cap):
     Configure camera for optimal performance.
     Returns the actual resolution achieved.
     """
+
     # Try to set desired resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, DESIRED_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, DESIRED_HEIGHT)
@@ -258,11 +299,17 @@ def get_optimal_camera_settings(cap):
     # Try to set FPS to 30
     cap.set(cv2.CAP_PROP_FPS, 30)
 
+    # Try to set desired resolution
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, DESIRED_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, DESIRED_HEIGHT)
+
     # Get actual values
     actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     actual_fps = cap.get(cv2.CAP_PROP_FPS)
 
+    actual_width = 1920
+    actual_height = 1080
     print(f"Camera configured:")
     print(f"  Resolution: {actual_width}x{actual_height}")
     print(f"  FPS: {actual_fps}")
@@ -270,7 +317,9 @@ def get_optimal_camera_settings(cap):
     return actual_width, actual_height
 
 
-def result_callback(result: vision.HandLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
+def result_callback(
+    result: vision.HandLandmarkerResult, output_image: mp.Image, timestamp_ms: int
+):
     """
     Callback function to receive hand landmark detection results.
     """
@@ -342,31 +391,46 @@ def draw_landmarks_on_image(image, detection_result):
             0.7,
             color,
             2,
-            cv2.LINE_AA
+            cv2.LINE_AA,
         )
 
         # Draw control status for right hand
-        if hand_label == "Right" and right_hand_state['control_active']:
-            status_text = "CONTROLLING - PALM" if right_hand_state['is_palm_open'] else "CONTROLLING"
+        if hand_label == "Right" and right_hand_state["control_active"]:
+            status_text = (
+                "CONTROLLING - PALM"
+                if right_hand_state["is_palm_open"]
+                else "CONTROLLING"
+            )
             cv2.putText(
                 image,
                 status_text,
                 (wrist_x - 50, wrist_y + 20),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
-                (0, 255, 0) if right_hand_state['is_palm_open'] else (0, 200, 200),
+                (0, 255, 0) if right_hand_state["is_palm_open"] else (0, 200, 200),
                 2,
-                cv2.LINE_AA
+                cv2.LINE_AA,
             )
 
             # Draw reference point if active
-            if right_hand_state['reference_point'] and right_hand_state['control_active']:
-                ref_x, ref_y = right_hand_state['reference_point']
+            if (
+                right_hand_state["reference_point"]
+                and right_hand_state["control_active"]
+            ):
+                ref_x, ref_y = right_hand_state["reference_point"]
                 ref_pixel_x = int(ref_x * width)
                 ref_pixel_y = int(ref_y * height)
                 cv2.circle(image, (ref_pixel_x, ref_pixel_y), 10, (0, 255, 255), 2)
-                cv2.putText(image, "REF", (ref_pixel_x + 15, ref_pixel_y),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+                cv2.putText(
+                    image,
+                    "REF",
+                    (ref_pixel_x + 15, ref_pixel_y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
 
     return image
 
@@ -383,7 +447,7 @@ def draw_fps(image, fps):
         1,
         COLOR_FPS,
         2,
-        cv2.LINE_AA
+        cv2.LINE_AA,
     )
 
 
@@ -399,7 +463,9 @@ def main():
 
     if not cap.isOpened():
         print("Error: Could not open camera.")
-        print("Please check that your webcam is connected and not in use by another application.")
+        print(
+            "Please check that your webcam is connected and not in use by another application."
+        )
         return
 
     # Configure camera settings
@@ -420,7 +486,7 @@ def main():
         min_hand_detection_confidence=MIN_HAND_DETECTION_CONFIDENCE,
         min_hand_presence_confidence=MIN_HAND_PRESENCE_CONFIDENCE,
         min_tracking_confidence=MIN_TRACKING_CONFIDENCE,
-        result_callback=result_callback
+        result_callback=result_callback,
     )
 
     try:
@@ -481,19 +547,19 @@ def main():
             draw_fps(frame, fps)
 
             # Display frame
-            cv2.imshow('Gesture Recognition System', frame)
+            cv2.imshow("Gesture Recognition System", frame)
 
             # Check for quit commands
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or key == ord('Q') or key == 27:  # 27 is ESC
+            if key == ord("q") or key == ord("Q") or key == 27:  # 27 is ESC
                 print("\nShutting down...")
                 break
-            elif key == ord('r') or key == ord('R'):
+            elif key == ord("r") or key == ord("R"):
                 # Reset reference point
                 release_all_keys()
-                right_hand_state['reference_point'] = None
-                right_hand_state['control_active'] = False
-                right_hand_state['is_palm_open'] = False
+                right_hand_state["reference_point"] = None
+                right_hand_state["control_active"] = False
+                right_hand_state["is_palm_open"] = False
                 print("\nReference point reset - show open palm to set new reference")
 
             frame_count += 1
@@ -504,6 +570,7 @@ def main():
     except Exception as e:
         print(f"\nError occurred: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:
