@@ -59,6 +59,17 @@ COLOR_LEFT_HAND = (255, 0, 0)  # Blue
 COLOR_RIGHT_HAND = (0, 0, 255)  # Red
 COLOR_FPS = (0, 255, 0)  # Green
 
+# WASD Overlay configuration
+WASD_OVERLAY_ENABLED = True  # Set to False to disable overlay
+WASD_KEY_SIZE = 50  # Size of each key box
+WASD_KEY_SPACING = 10  # Spacing between keys
+WASD_OVERLAY_X = 20  # X position (bottom-left corner)
+WASD_OVERLAY_Y_OFFSET = 150  # Y offset from bottom of screen
+WASD_KEY_COLOR_INACTIVE = (60, 60, 60)  # Dark gray when inactive
+WASD_KEY_COLOR_ACTIVE = (0, 255, 0)  # Bright green when pressed
+WASD_TEXT_COLOR_INACTIVE = (180, 180, 180)  # Light gray text
+WASD_TEXT_COLOR_ACTIVE = (0, 0, 0)  # Black text when active
+
 # Hand connections (pairs of landmark indices to draw lines between)
 HAND_CONNECTIONS = frozenset(
     [
@@ -259,11 +270,11 @@ def update_keyboard_controls(hand_landmarks):
     key_forward = KEY_MAPPING["forward"]
     key_backward = KEY_MAPPING["backward"]
 
-    # Check X-axis (left/right) - INVERTED: palm left = D, palm right = A
+    # Check X-axis (left/right)
     if delta_x < -MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add(key_right)  # Palm moved left → D key
+        target_keys.add(key_left)  # Palm moved left → A key
     elif delta_x > MOVEMENT_THRESHOLD_ACTIVATE:
-        target_keys.add(key_left)  # Palm moved right → A key
+        target_keys.add(key_right)  # Palm moved right → D key
     else:
         # Hysteresis: only release if within smaller threshold
         if (
@@ -355,8 +366,9 @@ def find_closest_left_hand(detection_result):
     for idx, hand_landmarks in enumerate(detection_result.hand_landmarks):
         handedness = detection_result.handedness[idx][0]
 
-        # Only consider left hands
-        if handedness.category_name == "Left":
+        # Convert to user's perspective (mirrored camera inverts left/right)
+        # MediaPipe sees "Right" when user shows their left hand
+        if handedness.category_name == "Right":
             # Calculate average Z-depth using palm center points
             palm_center_x, palm_center_y = calculate_palm_center(hand_landmarks)
 
@@ -575,7 +587,10 @@ def draw_landmarks_on_image(image, detection_result):
     for idx, hand_landmarks in enumerate(detection_result.hand_landmarks):
         # Get handedness (Left or Right)
         handedness = detection_result.handedness[idx][0]
-        hand_label = handedness.category_name
+
+        # Convert to user's perspective (mirrored camera inverts left/right)
+        # MediaPipe says "Right" when user shows their left hand
+        hand_label = "Left" if handedness.category_name == "Right" else "Right"
 
         # Determine color based on hand
         color = COLOR_LEFT_HAND if hand_label == "Left" else COLOR_RIGHT_HAND
@@ -606,6 +621,15 @@ def draw_landmarks_on_image(image, detection_result):
             cv2.circle(image, (x, y), 5, color, -1)
             cv2.circle(image, (x, y), 7, (255, 255, 255), 1)
 
+        # Draw current palm center on the hand
+        palm_center_x, palm_center_y = calculate_palm_center(hand_landmarks)
+        palm_pixel_x = int(palm_center_x * width)
+        palm_pixel_y = int(palm_center_y * height)
+
+        # Draw palm center circle (magenta color to stand out)
+        cv2.circle(image, (palm_pixel_x, palm_pixel_y), 8, (255, 0, 255), -1)  # Filled magenta circle
+        cv2.circle(image, (palm_pixel_x, palm_pixel_y), 10, (255, 255, 255), 2)  # White outline
+
         # Draw hand label at wrist (landmark 0)
         wrist = hand_landmarks[0]
         wrist_x = int(wrist.x * width)
@@ -622,7 +646,7 @@ def draw_landmarks_on_image(image, detection_result):
             cv2.LINE_AA,
         )
 
-        # Draw control status for left hand
+        # Draw control status for left hand (user's perspective)
         if hand_label == "Left" and controlling_hand_state["control_active"]:
             # Check if this is the controlling hand by proximity
             is_controlling_hand = is_same_hand(hand_landmarks, controlling_hand_state["last_palm_position"])
@@ -688,6 +712,95 @@ def draw_fps(image, fps):
         2,
         cv2.LINE_AA,
     )
+
+
+def draw_wasd_overlay(image):
+    """
+    Draw WASD keyboard overlay showing which keys are currently pressed.
+    Layout:
+        W
+      A S D
+    """
+    if not WASD_OVERLAY_ENABLED:
+        return
+
+    height, width, _ = image.shape
+    active_keys = controlling_hand_state["active_keys"]
+
+    # Get configured keys
+    key_w = KEY_MAPPING["forward"]
+    key_a = KEY_MAPPING["left"]
+    key_s = KEY_MAPPING["backward"]
+    key_d = KEY_MAPPING["right"]
+
+    # Calculate base position (bottom-left area)
+    base_x = WASD_OVERLAY_X
+    base_y = height - WASD_OVERLAY_Y_OFFSET
+
+    # Define key positions in WASD layout
+    # W is centered above A S D
+    keys = {
+        key_w: {
+            "pos": (base_x + WASD_KEY_SIZE + WASD_KEY_SPACING, base_y - WASD_KEY_SIZE - WASD_KEY_SPACING),
+            "label": "W"
+        },
+        key_a: {
+            "pos": (base_x, base_y),
+            "label": "A"
+        },
+        key_s: {
+            "pos": (base_x + WASD_KEY_SIZE + WASD_KEY_SPACING, base_y),
+            "label": "S"
+        },
+        key_d: {
+            "pos": (base_x + 2 * (WASD_KEY_SIZE + WASD_KEY_SPACING), base_y),
+            "label": "D"
+        }
+    }
+
+    # Draw each key
+    for key, info in keys.items():
+        x, y = info["pos"]
+        label = info["label"]
+        is_active = key in active_keys
+
+        # Choose colors based on active state
+        box_color = WASD_KEY_COLOR_ACTIVE if is_active else WASD_KEY_COLOR_INACTIVE
+        text_color = WASD_TEXT_COLOR_ACTIVE if is_active else WASD_TEXT_COLOR_INACTIVE
+
+        # Draw key box (filled rectangle)
+        cv2.rectangle(
+            image,
+            (x, y),
+            (x + WASD_KEY_SIZE, y + WASD_KEY_SIZE),
+            box_color,
+            -1  # Filled
+        )
+
+        # Draw border (white outline)
+        cv2.rectangle(
+            image,
+            (x, y),
+            (x + WASD_KEY_SIZE, y + WASD_KEY_SIZE),
+            (255, 255, 255),
+            2  # Border thickness
+        )
+
+        # Draw key label (centered)
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        text_x = x + (WASD_KEY_SIZE - text_size[0]) // 2
+        text_y = y + (WASD_KEY_SIZE + text_size[1]) // 2
+
+        cv2.putText(
+            image,
+            label,
+            (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            text_color,
+            2,
+            cv2.LINE_AA,
+        )
 
 
 def draw_direction_arrow(image, reference_point, active_keys):
@@ -850,6 +963,9 @@ def main():
                 print("Error: Failed to capture frame.")
                 break
 
+            # Mirror flip the frame horizontally
+            frame = cv2.flip(frame, 1)
+
             # Convert BGR to RGB for MediaPipe
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -875,6 +991,9 @@ def main():
 
             # Draw FPS on frame
             draw_fps(frame, fps)
+
+            # Draw WASD overlay
+            draw_wasd_overlay(frame)
 
             # Scale frame for PiP mode if enabled (keep original for processing)
             if pip_mode:
