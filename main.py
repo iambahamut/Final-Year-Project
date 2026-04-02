@@ -486,11 +486,11 @@ def process_left_hand_control(detection_result):
         if is_palm_open and controlling_hand_state["is_palm_open"]:
             update_keyboard_controls(left_hand_landmarks)
 
-        # Palm closed but control stays active if reference exists
+        # Palm closed - release keys and reset reference point
         elif not is_palm_open and controlling_hand_state["is_palm_open"]:
             controlling_hand_state["is_palm_open"] = False
-            # Note: control_active and reference_point stay set
-            # Keys will continue to be controlled based on hand position
+            release_all_keys()
+            controlling_hand_state["reference_point"] = None
 
     else:
         # No left hand found - handle tracking loss with grace period
