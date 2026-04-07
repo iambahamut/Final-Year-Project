@@ -44,10 +44,14 @@ class GestureConfig:
 
     # Right-hand gesture thresholds
     pinch_distance_threshold: float = 0.06
-    finger_curl_max_ratio: float = 0.9
-    thumb_extended_min_ratio: float = 1.3
-    thumbs_up_y_margin: float = 0.03
-    thumbs_up_min_thumb_openness: float = 0.15
+    finger_curl_max_ratio: float = 0.95
+    thumb_extended_min_ratio: float = 1.2
+    thumbs_up_y_margin: float = 0.02
+    thumbs_up_min_thumb_openness: float = 0.10
+
+    # Gesture confirmation (debouncing)
+    gesture_confirm_frames: int = 3
+    gesture_release_frames: int = 5
 
     # PiP
     pip_scale: float = 0.4

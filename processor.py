@@ -87,10 +87,13 @@ class GestureProcessor:
             "control_active":     False,
         }
 
-        # Right-hand gesture state
+        # Right-hand gesture state (with debounce tracking)
         self.right_hand_gesture_state = {
-            "active_gesture": None,
-            "active_key":     None,
+            "active_gesture":  None,
+            "active_key":      None,
+            "pending_gesture": None,   # gesture being confirmed
+            "confirm_count":   0,      # consecutive frames pending gesture seen
+            "release_count":   0,      # consecutive frames active gesture absent
         }
 
         # MediaPipe landmarker (set by init_landmarker)
@@ -598,7 +601,7 @@ class GestureProcessor:
     # ------------------------------------------------------------------
 
     def process_right_hand_gestures(self, detection_result):
-        """Detect gesture on right hand, press/release mapped key."""
+        """Detect gesture on right hand with confirmation-frame debouncing."""
         if not self.cfg.enable_right_hand_gestures:
             return
 
@@ -608,18 +611,41 @@ class GestureProcessor:
         if right_hand is not None:
             detected_gesture = self.classify_right_hand_gesture(right_hand)
 
-        prev_gesture = self.right_hand_gesture_state["active_gesture"]
-        prev_key     = self.right_hand_gesture_state["active_key"]
+        state  = self.right_hand_gesture_state
+        active = state["active_gesture"]
 
-        if detected_gesture == prev_gesture:
+        if detected_gesture == active:
+            # Still seeing the active gesture — reset pending/release counters
+            state["pending_gesture"] = None
+            state["confirm_count"]   = 0
+            state["release_count"]   = 0
             return
 
+        # Detected something different from the active gesture
+        # Track consecutive frames for the new candidate
+        if detected_gesture == state["pending_gesture"]:
+            state["confirm_count"] += 1
+        else:
+            state["pending_gesture"] = detected_gesture
+            state["confirm_count"]   = 1
+
+        # Determine the confirmation threshold
+        if detected_gesture is None:
+            # Releasing requires more frames (resistant to accidental drops)
+            threshold = self.cfg.gesture_release_frames
+        else:
+            threshold = self.cfg.gesture_confirm_frames
+
+        if state["confirm_count"] < threshold:
+            return  # Not yet confirmed — wait for more frames
+
+        # Confirmed: activate the new gesture
         # Release previous key
-        if prev_key is not None:
+        if state["active_key"] is not None:
             if self.cfg.enable_debug_output:
-                print(f"RIGHT GESTURE RELEASE: {prev_gesture}")
+                print(f"RIGHT GESTURE RELEASE: {active}")
             try:
-                self._release_action(prev_key)
+                self._release_action(state["active_key"])
             except Exception:
                 pass
 
@@ -633,11 +659,15 @@ class GestureProcessor:
                 self._press_action(resolved)
             except Exception:
                 pass
-            self.right_hand_gesture_state["active_gesture"] = detected_gesture
-            self.right_hand_gesture_state["active_key"]     = resolved
+            state["active_gesture"] = detected_gesture
+            state["active_key"]     = resolved
         else:
-            self.right_hand_gesture_state["active_gesture"] = None
-            self.right_hand_gesture_state["active_key"]     = None
+            state["active_gesture"] = None
+            state["active_key"]     = None
+
+        state["pending_gesture"] = None
+        state["confirm_count"]   = 0
+        state["release_count"]   = 0
 
     def release_right_hand_gesture_key(self):
         """Release any currently held right-hand gesture key."""
@@ -646,8 +676,11 @@ class GestureProcessor:
                 self._release_action(self.right_hand_gesture_state["active_key"])
             except Exception:
                 pass
-            self.right_hand_gesture_state["active_gesture"] = None
-            self.right_hand_gesture_state["active_key"]     = None
+        self.right_hand_gesture_state["active_gesture"]  = None
+        self.right_hand_gesture_state["active_key"]      = None
+        self.right_hand_gesture_state["pending_gesture"] = None
+        self.right_hand_gesture_state["confirm_count"]   = 0
+        self.right_hand_gesture_state["release_count"]   = 0
 
     # ------------------------------------------------------------------
     # Drawing
