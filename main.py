@@ -85,7 +85,7 @@ def main():
         cv2.imshow("Gesture Controller", annotated)
 
         key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
+        if key == ord("b"):
             print("\nQuitting...")
             break
         elif key == ord("r"):
