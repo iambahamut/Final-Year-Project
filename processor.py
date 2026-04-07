@@ -235,20 +235,61 @@ class GestureProcessor:
         base  = hand_landmarks[base_idx]
         tip_dist  = ((tip.x  - wrist.x) ** 2 + (tip.y  - wrist.y) ** 2 + (tip.z  - wrist.z) ** 2) ** 0.5
         base_dist = ((base.x - wrist.x) ** 2 + (base.y - wrist.y) ** 2 + (base.z - wrist.z) ** 2) ** 0.5
-        if base_dist == 0:
+        if base_dist < 1e-7:
             return False
         return tip_dist < base_dist * self.cfg.finger_curl_max_ratio
 
+    def _is_fist(self, hand_landmarks):
+        """True when all four fingers (index, middle, ring, pinky) are curled."""
+        finger_tips  = [8, 12, 16, 20]
+        finger_bases = [5,  9, 13, 17]
+        curled_count = sum(
+            1 for tip, base in zip(finger_tips, finger_bases)
+            if self._finger_curled(hand_landmarks, tip, base)
+        )
+        return curled_count >= 4
+
+    def _thumb_truly_extended(self, hand_landmarks):
+        """Stricter thumb extension check that resists fist false positives."""
+        wrist     = hand_landmarks[0]
+        thumb_tip = hand_landmarks[4]
+        thumb_mcp = hand_landmarks[2]
+        index_mcp = hand_landmarks[5]
+
+        # Check 1: Wrist-relative distance ratio with stricter threshold
+        tip_dist  = ((thumb_tip.x - wrist.x)**2 + (thumb_tip.y - wrist.y)**2 + (thumb_tip.z - wrist.z)**2) ** 0.5
+        base_dist = ((thumb_mcp.x - wrist.x)**2 + (thumb_mcp.y - wrist.y)**2 + (thumb_mcp.z - wrist.z)**2) ** 0.5
+        if base_dist < 1e-7 or tip_dist <= base_dist * self.cfg.thumb_extended_min_ratio:
+            return False
+
+        # Check 2: Thumb tip must be meaningfully above MCP (y decreases upward)
+        if thumb_tip.y >= thumb_mcp.y - self.cfg.thumbs_up_y_margin:
+            return False
+
+        # Check 3: Thumb tip must be away from index MCP (not wrapped around fist)
+        thumb_to_index_mcp = ((thumb_tip.x - index_mcp.x)**2 + (thumb_tip.y - index_mcp.y)**2 + (thumb_tip.z - index_mcp.z)**2) ** 0.5
+        if thumb_to_index_mcp < self.cfg.thumbs_up_min_thumb_openness:
+            return False
+
+        return True
+
     def is_pinch(self, hand_landmarks):
-        """Thumb tip (4) and Index tip (8) close together."""
-        return self._landmark_distance(hand_landmarks, 4, 8) < self.cfg.pinch_distance_threshold
+        """Thumb tip (4) and index tip (8) close together, but not a fist."""
+        if self._is_fist(hand_landmarks):
+            return False
+        if self._landmark_distance(hand_landmarks, 4, 8) >= self.cfg.pinch_distance_threshold:
+            return False
+        # At least 1 of middle/ring/pinky must not be curled (real pinch has relaxed fingers)
+        non_curled = sum(
+            1 for tip, base in zip([12, 16, 20], [9, 13, 17])
+            if not self._finger_curled(hand_landmarks, tip, base)
+        )
+        return non_curled >= 1
 
     def is_thumbs_up(self, hand_landmarks):
-        """Thumb extended upward, all other fingers curled."""
-        if not self._finger_extended(hand_landmarks, 4, 2):
-            return False
-        # Thumb tip must be above thumb MCP (y decreases upward in normalized coords)
-        if hand_landmarks[4].y >= hand_landmarks[2].y:
+        """Thumb extended upward, all other fingers curled.
+        Uses stricter thumb check to reject fist false positives."""
+        if not self._thumb_truly_extended(hand_landmarks):
             return False
         return (
             self._finger_curled(hand_landmarks, 8,  5)
@@ -258,8 +299,10 @@ class GestureProcessor:
         )
 
     def is_point(self, hand_landmarks):
-        """Index extended, middle/ring/pinky curled. Thumb ignored."""
+        """Index extended, middle/ring/pinky curled, thumb must not be extended."""
         if not self._finger_extended(hand_landmarks, 8, 5):
+            return False
+        if self._finger_extended(hand_landmarks, 4, 2):
             return False
         return (
             self._finger_curled(hand_landmarks, 12, 9)
@@ -268,13 +311,13 @@ class GestureProcessor:
         )
 
     def classify_right_hand_gesture(self, hand_landmarks):
-        """Classify gesture in priority order. Returns name or None."""
-        if self.is_pinch(hand_landmarks):
-            return "pinch"
+        """Classify gesture in priority order (most specific first). Returns name or None."""
         if self.is_thumbs_up(hand_landmarks):
             return "thumbsup"
         if self.is_point(hand_landmarks):
             return "point"
+        if self.is_pinch(hand_landmarks):
+            return "pinch"
         if self.is_hand_open_palm(hand_landmarks):
             return "palm"
         return None

@@ -37,14 +37,17 @@ class GestureConfig:
 
     # Right-hand gesture keys
     enable_right_hand_gestures: bool = True
-    gesture_pinch_key: str = "e"
-    gesture_thumbsup_key: str = "v"
-    gesture_palm_key: str = "f"
+    gesture_pinch_key: str = "k"
+    gesture_thumbsup_key: str = "e"
+    gesture_palm_key: str = "j"
     gesture_point_key: str = "q"
 
     # Right-hand gesture thresholds
     pinch_distance_threshold: float = 0.06
     finger_curl_max_ratio: float = 0.9
+    thumb_extended_min_ratio: float = 1.3
+    thumbs_up_y_margin: float = 0.03
+    thumbs_up_min_thumb_openness: float = 0.15
 
     # PiP
     pip_scale: float = 0.4
