@@ -3,7 +3,7 @@
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.10-green)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10-orange)
-![PyQt6](https://img.shields.io/badge/PyQt6-red)
+![PyQt6](https://img.shields.io/badge/PyQt6-6.5.0-red)
 
 
 A real-time hand gesture recognition system that translates webcam hand movements into WASD keyboard inputs. Built with MediaPipe and OpenCV, it enables hands-free control of games or any application that uses WASD movement keys.
