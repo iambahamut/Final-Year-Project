@@ -21,7 +21,8 @@ class PipOverlay(QWidget):
             | Qt.WindowType.Tool
         )
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        self._drag_pos = None
 
         self._label = QLabel(self)
         layout = QVBoxLayout(self)
@@ -33,6 +34,21 @@ class PipOverlay(QWidget):
         pixmap = QPixmap.fromImage(qimage)
         self._label.setPixmap(pixmap)
         self.resize(pixmap.size())
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = None
+            event.accept()
 
 
 class CameraWorker(QThread):
