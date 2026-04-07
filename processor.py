@@ -8,44 +8,82 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 try:
-    from pynput.keyboard import Controller
+    from pynput.keyboard import Controller, Key as PynputKey
     PYNPUT_AVAILABLE = True
 except ImportError:
     PYNPUT_AVAILABLE = False
+    PynputKey = None
 
 from config import GestureConfig
 
 # Hand connections (pairs of landmark indices to draw lines between)
 HAND_CONNECTIONS = frozenset([
-    (0, 1), (1, 2), (2, 3), (3, 4),        # Thumb
-    (0, 5), (5, 6), (6, 7), (7, 8),        # Index finger
-    (5, 9), (9, 10), (10, 11), (11, 12),   # Middle finger
-    (9, 13), (13, 14), (14, 15), (15, 16), # Ring finger
-    (13, 17), (0, 17), (17, 18), (18, 19), (19, 20),  # Pinky
+    (0, 1), (1, 2), (2, 3), (3, 4),                    # Thumb
+    (0, 5), (5, 6), (6, 7), (7, 8),                    # Index finger
+    (5, 9), (9, 10), (10, 11), (11, 12),                # Middle finger
+    (9, 13), (13, 14), (14, 15), (15, 16),              # Ring finger
+    (13, 17), (0, 17), (17, 18), (18, 19), (19, 20),   # Pinky
 ])
 
 COLOR_FPS = (0, 255, 0)
+
+# Map config key strings to pynput Key enum values for special keys
+SPECIAL_KEY_MAP = {}
+if PynputKey:
+    SPECIAL_KEY_MAP = {
+        "space":     PynputKey.space,
+        "enter":     PynputKey.enter,
+        "tab":       PynputKey.tab,
+        "shift":     PynputKey.shift,
+        "ctrl":      PynputKey.ctrl,
+        "alt":       PynputKey.alt,
+        "backspace": PynputKey.backspace,
+        "esc":       PynputKey.esc,
+    }
+
+
+def resolve_key(key_string):
+    """Map 'space' -> Key.space, single chars returned as-is."""
+    return SPECIAL_KEY_MAP.get(key_string, key_string)
+
+
+GESTURE_DISPLAY_NAMES = {
+    "pinch":    "PINCH",
+    "thumbsup": "THUMBS UP",
+    "palm":     "FLAT PALM",
+    "point":    "POINT",
+}
 
 
 class GestureProcessor:
     def __init__(self, cfg: GestureConfig):
         self.cfg = cfg
 
-        # Thread-safe detection result (replaces spinlock)
+        # Thread-safe detection result
         self._result_lock = threading.Lock()
         self._detection_result = None
+
+        # FIX (flickering): cache the last valid detection result so landmarks
+        # are drawn every frame even when detect_async hasn't fired yet.
+        self._last_drawn_result = None
 
         # Keyboard controller
         self.keyboard_controller = None
 
         # Hand control state
         self.controlling_hand_state = {
-            "is_palm_open": False,
-            "reference_point": None,
+            "is_palm_open":       False,
+            "reference_point":    None,
             "last_palm_position": None,
-            "active_keys": set(),
-            "last_seen_time": None,
-            "control_active": False,
+            "active_keys":        set(),
+            "last_seen_time":     None,
+            "control_active":     False,
+        }
+
+        # Right-hand gesture state
+        self.right_hand_gesture_state = {
+            "active_gesture": None,
+            "active_key":     None,
         }
 
         # MediaPipe landmarker (set by init_landmarker)
@@ -57,10 +95,19 @@ class GestureProcessor:
     @property
     def key_mapping(self):
         return {
-            "forward": self.cfg.key_forward,
+            "forward":  self.cfg.key_forward,
             "backward": self.cfg.key_backward,
-            "left": self.cfg.key_left,
-            "right": self.cfg.key_right,
+            "left":     self.cfg.key_left,
+            "right":    self.cfg.key_right,
+        }
+
+    @property
+    def right_hand_key_mapping(self):
+        return {
+            "pinch":    self.cfg.gesture_pinch_key,
+            "thumbsup": self.cfg.gesture_thumbsup_key,
+            "palm":     self.cfg.gesture_palm_key,
+            "point":    self.cfg.gesture_point_key,
         }
 
     # ------------------------------------------------------------------
@@ -73,14 +120,14 @@ class GestureProcessor:
         if not cap.isOpened():
             raise RuntimeError("Could not open camera.")
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.desired_width)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  self.cfg.desired_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.desired_height)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         cap.set(cv2.CAP_PROP_FPS, 30)
 
-        actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual_fps = cap.get(cv2.CAP_PROP_FPS)
+        actual_fps    = cap.get(cv2.CAP_PROP_FPS)
 
         print(f"Camera configured:")
         print(f"  Resolution: {actual_width}x{actual_height}")
@@ -135,7 +182,7 @@ class GestureProcessor:
         with self._result_lock:
             result = self._detection_result
             self._detection_result = None
-            return result
+        return result
 
     # ------------------------------------------------------------------
     # Gesture detection
@@ -146,11 +193,11 @@ class GestureProcessor:
         wrist = hand_landmarks[0]
         fingers_extended = 0
 
-        finger_tips = [8, 12, 16, 20]
-        finger_bases = [5, 9, 13, 17]
+        finger_tips  = [8, 12, 16, 20]
+        finger_bases = [5,  9, 13, 17]
 
         for tip_idx, base_idx in zip(finger_tips, finger_bases):
-            tip = hand_landmarks[tip_idx]
+            tip  = hand_landmarks[tip_idx]
             base = hand_landmarks[base_idx]
 
             tip_dist = (
@@ -166,44 +213,131 @@ class GestureProcessor:
         return fingers_extended >= self.cfg.palm_min_fingers
 
     @staticmethod
+    def _landmark_distance(hand_landmarks, idx_a, idx_b):
+        """3D Euclidean distance between two landmarks."""
+        a = hand_landmarks[idx_a]
+        b = hand_landmarks[idx_b]
+        return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2) ** 0.5
+
+    def _finger_extended(self, hand_landmarks, tip_idx, base_idx):
+        """Check if a finger is extended (tip far from wrist relative to base)."""
+        wrist = hand_landmarks[0]
+        tip   = hand_landmarks[tip_idx]
+        base  = hand_landmarks[base_idx]
+        tip_dist  = ((tip.x  - wrist.x) ** 2 + (tip.y  - wrist.y) ** 2 + (tip.z  - wrist.z) ** 2) ** 0.5
+        base_dist = ((base.x - wrist.x) ** 2 + (base.y - wrist.y) ** 2 + (base.z - wrist.z) ** 2) ** 0.5
+        return tip_dist > base_dist * self.cfg.palm_extension_threshold
+
+    def _finger_curled(self, hand_landmarks, tip_idx, base_idx):
+        """Check if a finger is curled (tip close to wrist relative to base)."""
+        wrist = hand_landmarks[0]
+        tip   = hand_landmarks[tip_idx]
+        base  = hand_landmarks[base_idx]
+        tip_dist  = ((tip.x  - wrist.x) ** 2 + (tip.y  - wrist.y) ** 2 + (tip.z  - wrist.z) ** 2) ** 0.5
+        base_dist = ((base.x - wrist.x) ** 2 + (base.y - wrist.y) ** 2 + (base.z - wrist.z) ** 2) ** 0.5
+        if base_dist == 0:
+            return False
+        return tip_dist < base_dist * self.cfg.finger_curl_max_ratio
+
+    def is_pinch(self, hand_landmarks):
+        """Thumb tip (4) and Index tip (8) close together."""
+        return self._landmark_distance(hand_landmarks, 4, 8) < self.cfg.pinch_distance_threshold
+
+    def is_thumbs_up(self, hand_landmarks):
+        """Thumb extended upward, all other fingers curled."""
+        if not self._finger_extended(hand_landmarks, 4, 2):
+            return False
+        # Thumb tip must be above thumb MCP (y decreases upward in normalized coords)
+        if hand_landmarks[4].y >= hand_landmarks[2].y:
+            return False
+        return (
+            self._finger_curled(hand_landmarks, 8,  5)
+            and self._finger_curled(hand_landmarks, 12, 9)
+            and self._finger_curled(hand_landmarks, 16, 13)
+            and self._finger_curled(hand_landmarks, 20, 17)
+        )
+
+    def is_point(self, hand_landmarks):
+        """Index extended, middle/ring/pinky curled. Thumb ignored."""
+        if not self._finger_extended(hand_landmarks, 8, 5):
+            return False
+        return (
+            self._finger_curled(hand_landmarks, 12, 9)
+            and self._finger_curled(hand_landmarks, 16, 13)
+            and self._finger_curled(hand_landmarks, 20, 17)
+        )
+
+    def classify_right_hand_gesture(self, hand_landmarks):
+        """Classify gesture in priority order. Returns name or None."""
+        if self.is_pinch(hand_landmarks):
+            return "pinch"
+        if self.is_thumbs_up(hand_landmarks):
+            return "thumbsup"
+        if self.is_point(hand_landmarks):
+            return "point"
+        if self.is_hand_open_palm(hand_landmarks):
+            return "palm"
+        return None
+
+    @staticmethod
     def calculate_palm_center(hand_landmarks):
         """Calculate palm center using 5-point average."""
-        wrist = hand_landmarks[0]
-        index_base = hand_landmarks[5]
+        wrist       = hand_landmarks[0]
+        index_base  = hand_landmarks[5]
         middle_base = hand_landmarks[9]
-        ring_base = hand_landmarks[13]
-        pinky_base = hand_landmarks[17]
+        ring_base   = hand_landmarks[13]
+        pinky_base  = hand_landmarks[17]
 
         center_x = (wrist.x + index_base.x + middle_base.x + ring_base.x + pinky_base.x) / 5
         center_y = (wrist.y + index_base.y + middle_base.y + ring_base.y + pinky_base.y) / 5
-
         return center_x, center_y
 
     def find_closest_left_hand(self, detection_result):
-        """Find closest left hand to camera based on Z-depth."""
+        """Find closest left hand to camera based on Z-depth.
+        NOTE: after flipping the frame, MediaPipe labels the user's left hand as 'Right'."""
         if not detection_result or not detection_result.hand_landmarks:
             return None, None
 
-        closest_hand = None
+        closest_hand  = None
         closest_index = None
-        min_z_depth = float("inf")
+        min_z_depth   = float("inf")
 
         for idx, hand_landmarks in enumerate(detection_result.hand_landmarks):
             handedness = detection_result.handedness[idx][0]
-
-            # MediaPipe sees "Right" when user shows their left hand (mirrored)
             if handedness.category_name == "Right":
-                wrist = hand_landmarks[0]
-                index_base = hand_landmarks[5]
+                wrist       = hand_landmarks[0]
+                index_base  = hand_landmarks[5]
                 middle_base = hand_landmarks[9]
-                ring_base = hand_landmarks[13]
-                pinky_base = hand_landmarks[17]
-
+                ring_base   = hand_landmarks[13]
+                pinky_base  = hand_landmarks[17]
                 avg_z = (wrist.z + index_base.z + middle_base.z + ring_base.z + pinky_base.z) / 5
-
                 if avg_z < min_z_depth:
-                    min_z_depth = avg_z
-                    closest_hand = hand_landmarks
+                    min_z_depth   = avg_z
+                    closest_hand  = hand_landmarks
+                    closest_index = idx
+
+        return closest_hand, closest_index
+
+    def find_closest_right_hand(self, detection_result):
+        """Find closest right hand to camera (user's right = MediaPipe 'Left')."""
+        if not detection_result or not detection_result.hand_landmarks:
+            return None, None
+
+        closest_hand  = None
+        closest_index = None
+        min_z_depth   = float("inf")
+
+        for idx, hand_landmarks in enumerate(detection_result.hand_landmarks):
+            handedness = detection_result.handedness[idx][0]
+            if handedness.category_name == "Left":
+                wrist = hand_landmarks[0]
+                avg_z = (
+                    wrist.z + hand_landmarks[5].z + hand_landmarks[9].z
+                    + hand_landmarks[13].z + hand_landmarks[17].z
+                ) / 5
+                if avg_z < min_z_depth:
+                    min_z_depth   = avg_z
+                    closest_hand  = hand_landmarks
                     closest_index = idx
 
         return closest_hand, closest_index
@@ -215,11 +349,11 @@ class GestureProcessor:
 
         palm_center_x, palm_center_y = self.calculate_palm_center(hand_landmarks)
 
-        wrist = hand_landmarks[0]
-        index_base = hand_landmarks[5]
+        wrist       = hand_landmarks[0]
+        index_base  = hand_landmarks[5]
         middle_base = hand_landmarks[9]
-        ring_base = hand_landmarks[13]
-        pinky_base = hand_landmarks[17]
+        ring_base   = hand_landmarks[13]
+        pinky_base  = hand_landmarks[17]
         palm_center_z = (wrist.z + index_base.z + middle_base.z + ring_base.z + pinky_base.z) / 5
 
         last_x, last_y, last_z = last_position
@@ -249,16 +383,16 @@ class GestureProcessor:
         delta_x = palm_center_x - ref_x
         delta_y = palm_center_y - ref_y
 
-        target_keys = set()
-        km = self.key_mapping
-        key_right = km["right"]
-        key_left = km["left"]
-        key_forward = km["forward"]
+        target_keys  = set()
+        km           = self.key_mapping
+        key_right    = km["right"]
+        key_left     = km["left"]
+        key_forward  = km["forward"]
         key_backward = km["backward"]
 
         activate = self.cfg.movement_threshold_activate
-        release = self.cfg.movement_threshold_release
-        active = self.controlling_hand_state["active_keys"]
+        release  = self.cfg.movement_threshold_release
+        active   = self.controlling_hand_state["active_keys"]
 
         # X-axis
         if delta_x < -activate:
@@ -320,11 +454,11 @@ class GestureProcessor:
 
         if left_hand_landmarks is not None:
             palm_center_x, palm_center_y = self.calculate_palm_center(left_hand_landmarks)
-            wrist = left_hand_landmarks[0]
-            index_base = left_hand_landmarks[5]
+            wrist       = left_hand_landmarks[0]
+            index_base  = left_hand_landmarks[5]
             middle_base = left_hand_landmarks[9]
-            ring_base = left_hand_landmarks[13]
-            pinky_base = left_hand_landmarks[17]
+            ring_base   = left_hand_landmarks[13]
+            pinky_base  = left_hand_landmarks[17]
             palm_center_z = (wrist.z + index_base.z + middle_base.z + ring_base.z + pinky_base.z) / 5
             current_palm_position = (palm_center_x, palm_center_y, palm_center_z)
 
@@ -335,7 +469,7 @@ class GestureProcessor:
                         if time_since_seen <= self.cfg.hand_loss_grace_period:
                             return
 
-            self.controlling_hand_state["last_seen_time"] = current_time
+            self.controlling_hand_state["last_seen_time"]     = current_time
             self.controlling_hand_state["last_palm_position"] = current_palm_position
 
             is_palm_open = self.is_hand_open_palm(left_hand_landmarks)
@@ -346,7 +480,7 @@ class GestureProcessor:
 
             if is_palm_open and not self.controlling_hand_state["is_palm_open"]:
                 self.controlling_hand_state["control_active"] = True
-                self.controlling_hand_state["is_palm_open"] = True
+                self.controlling_hand_state["is_palm_open"]   = True
                 print("Control activated - open palm detected")
 
             if is_palm_open and self.controlling_hand_state["is_palm_open"]:
@@ -365,7 +499,7 @@ class GestureProcessor:
                         print("Hand lost - releasing controls")
                         self.release_all_keys()
                         self.controlling_hand_state["control_active"] = False
-                        self.controlling_hand_state["is_palm_open"] = False
+                        self.controlling_hand_state["is_palm_open"]   = False
 
     def release_all_keys(self):
         """Release all currently pressed keys."""
@@ -382,11 +516,71 @@ class GestureProcessor:
     def reset_control(self):
         """Release keys and reset all control state."""
         self.release_all_keys()
-        self.controlling_hand_state["reference_point"] = None
+        self.release_right_hand_gesture_key()
+        self.controlling_hand_state["reference_point"]    = None
         self.controlling_hand_state["last_palm_position"] = None
-        self.controlling_hand_state["control_active"] = False
-        self.controlling_hand_state["is_palm_open"] = False
+        self.controlling_hand_state["control_active"]     = False
+        self.controlling_hand_state["is_palm_open"]       = False
         print("\nReference point reset - show open palm with left hand to set new reference")
+
+    # ------------------------------------------------------------------
+    # Right-hand gesture control
+    # ------------------------------------------------------------------
+
+    def process_right_hand_gestures(self, detection_result):
+        """Detect gesture on right hand, press/release mapped key."""
+        if not self.cfg.enable_right_hand_gestures:
+            return
+
+        right_hand, _ = self.find_closest_right_hand(detection_result)
+
+        detected_gesture = None
+        if right_hand is not None:
+            detected_gesture = self.classify_right_hand_gesture(right_hand)
+
+        prev_gesture = self.right_hand_gesture_state["active_gesture"]
+        prev_key     = self.right_hand_gesture_state["active_key"]
+
+        if detected_gesture == prev_gesture:
+            return
+
+        # Release previous key
+        if prev_key is not None:
+            if self.cfg.enable_debug_output:
+                print(f"RIGHT GESTURE RELEASE: {prev_gesture}")
+            if self.keyboard_controller is not None:
+                try:
+                    self.keyboard_controller.release(prev_key)
+                except Exception:
+                    pass
+
+        # Press new key
+        if detected_gesture is not None:
+            key_string = self.right_hand_key_mapping[detected_gesture]
+            resolved   = resolve_key(key_string)
+            if self.cfg.enable_debug_output:
+                print(f"RIGHT GESTURE PRESS: {detected_gesture} -> {key_string}")
+            if self.keyboard_controller is not None:
+                try:
+                    self.keyboard_controller.press(resolved)
+                except Exception:
+                    pass
+            self.right_hand_gesture_state["active_gesture"] = detected_gesture
+            self.right_hand_gesture_state["active_key"]     = resolved
+        else:
+            self.right_hand_gesture_state["active_gesture"] = None
+            self.right_hand_gesture_state["active_key"]     = None
+
+    def release_right_hand_gesture_key(self):
+        """Release any currently held right-hand gesture key."""
+        if self.right_hand_gesture_state["active_key"] is not None:
+            if self.keyboard_controller is not None:
+                try:
+                    self.keyboard_controller.release(self.right_hand_gesture_state["active_key"])
+                except Exception:
+                    pass
+            self.right_hand_gesture_state["active_gesture"] = None
+            self.right_hand_gesture_state["active_key"]     = None
 
     # ------------------------------------------------------------------
     # Drawing
@@ -398,7 +592,7 @@ class GestureProcessor:
             return image
 
         height, width, _ = image.shape
-        color_left = tuple(self.cfg.color_left_hand)
+        color_left  = tuple(self.cfg.color_left_hand)
         color_right = tuple(self.cfg.color_right_hand)
 
         for idx, hand_landmarks in enumerate(detection_result.hand_landmarks):
@@ -417,20 +611,20 @@ class GestureProcessor:
                     color, 2,
                 )
 
-            # Draw landmarks
+            # Draw landmark dots
             for landmark in hand_landmarks:
                 x = int(landmark.x * width)
                 y = int(landmark.y * height)
                 cv2.circle(image, (x, y), 5, color, -1)
                 cv2.circle(image, (x, y), 7, (255, 255, 255), 1)
 
-            # Draw palm center
+            # Draw palm centre
             pcx, pcy = self.calculate_palm_center(hand_landmarks)
             ppx, ppy = int(pcx * width), int(pcy * height)
-            cv2.circle(image, (ppx, ppy), 8, (255, 0, 255), -1)
+            cv2.circle(image, (ppx, ppy), 8,  (255, 0, 255), -1)
             cv2.circle(image, (ppx, ppy), 10, (255, 255, 255), 2)
 
-            # Draw hand label
+            # Draw hand label near wrist
             wrist = hand_landmarks[0]
             wx, wy = int(wrist.x * width), int(wrist.y * height)
             cv2.putText(image, f"{hand_label} Hand", (wx - 50, wy - 20),
@@ -438,31 +632,46 @@ class GestureProcessor:
 
             # Draw control status for left hand
             if hand_label == "Left" and self.controlling_hand_state["control_active"]:
-                is_ctrl = self.is_same_hand(hand_landmarks, self.controlling_hand_state["last_palm_position"])
-
+                is_ctrl = self.is_same_hand(
+                    hand_landmarks, self.controlling_hand_state["last_palm_position"]
+                )
                 if is_ctrl or self.controlling_hand_state["last_palm_position"] is None:
                     status_text = (
                         "CONTROLLING - PALM"
                         if self.controlling_hand_state["is_palm_open"]
                         else "CONTROLLING"
                     )
-                    status_color = (0, 255, 0) if self.controlling_hand_state["is_palm_open"] else (0, 200, 200)
+                    status_color = (
+                        (0, 255, 0) if self.controlling_hand_state["is_palm_open"] else (0, 200, 200)
+                    )
                     cv2.putText(image, status_text, (wx - 50, wy + 20),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2, cv2.LINE_AA)
 
-                    # Draw reference point
-                    if self.controlling_hand_state["reference_point"] and self.controlling_hand_state["control_active"]:
-                        ref_x, ref_y = self.controlling_hand_state["reference_point"]
-                        rpx, rpy = int(ref_x * width), int(ref_y * height)
-                        cv2.circle(image, (rpx, rpy), 10, (0, 255, 255), 2)
-                        cv2.putText(image, "REF", (rpx + 15, rpy),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+            # Draw reference point + direction arrow
+            if self.controlling_hand_state["reference_point"] and self.controlling_hand_state["control_active"]:
+                ref_x, ref_y = self.controlling_hand_state["reference_point"]
+                rpx, rpy = int(ref_x * width), int(ref_y * height)
+                cv2.circle(image, (rpx, rpy), 10, (0, 255, 255), 2)
+                cv2.putText(image, "REF", (rpx + 15, rpy),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+                self.draw_direction_arrow(
+                    image,
+                    self.controlling_hand_state["reference_point"],
+                    self.controlling_hand_state["active_keys"],
+                )
 
-                        self.draw_direction_arrow(
-                            image,
-                            self.controlling_hand_state["reference_point"],
-                            self.controlling_hand_state["active_keys"],
-                        )
+            # Draw gesture status for right hand
+            if hand_label == "Right":
+                gesture = self.right_hand_gesture_state["active_gesture"]
+                if gesture:
+                    display_name = GESTURE_DISPLAY_NAMES.get(gesture, gesture.upper())
+                    key_name     = self.right_hand_key_mapping[gesture]
+                    cv2.putText(
+                        image,
+                        f"{display_name} [{key_name.upper()}]",
+                        (wx - 50, wy + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA,
+                    )
 
         return image
 
@@ -480,34 +689,36 @@ class GestureProcessor:
         height, width, _ = image.shape
         active_keys = self.controlling_hand_state["active_keys"]
 
-        km = self.key_mapping
-        key_w, key_a = km["forward"], km["left"]
-        key_s, key_d = km["backward"], km["right"]
+        km    = self.key_mapping
+        key_w = km["forward"]
+        key_a = km["left"]
+        key_s = km["backward"]
+        key_d = km["right"]
 
-        ks = self.cfg.wasd_key_size
-        sp = self.cfg.wasd_key_spacing
+        ks     = self.cfg.wasd_key_size
+        sp     = self.cfg.wasd_key_spacing
         base_x = self.cfg.wasd_overlay_x
         base_y = height - self.cfg.wasd_overlay_y_offset
 
-        color_active = tuple(self.cfg.wasd_key_color_active)
+        color_active   = tuple(self.cfg.wasd_key_color_active)
         color_inactive = tuple(self.cfg.wasd_key_color_inactive)
-        text_active = tuple(self.cfg.wasd_text_color_active)
-        text_inactive = tuple(self.cfg.wasd_text_color_inactive)
+        text_active    = tuple(self.cfg.wasd_text_color_active)
+        text_inactive  = tuple(self.cfg.wasd_text_color_inactive)
 
         keys = {
-            key_w: {"pos": (base_x + ks + sp, base_y - ks - sp), "label": "W"},
-            key_a: {"pos": (base_x, base_y), "label": "A"},
-            key_s: {"pos": (base_x + ks + sp, base_y), "label": "S"},
-            key_d: {"pos": (base_x + 2 * (ks + sp), base_y), "label": "D"},
+            key_w: {"pos": (base_x + ks + sp,          base_y - ks - sp), "label": "W"},
+            key_a: {"pos": (base_x,                    base_y),            "label": "A"},
+            key_s: {"pos": (base_x + ks + sp,          base_y),            "label": "S"},
+            key_d: {"pos": (base_x + 2 * (ks + sp),   base_y),            "label": "D"},
         }
 
         for key, info in keys.items():
-            x, y = info["pos"]
+            x, y  = info["pos"]
             label = info["label"]
             is_active = key in active_keys
 
-            box_color = color_active if is_active else color_inactive
-            text_color = text_active if is_active else text_inactive
+            box_color  = color_active   if is_active else color_inactive
+            text_color = text_active    if is_active else text_inactive
 
             cv2.rectangle(image, (x, y), (x + ks, y + ks), box_color, -1)
             cv2.rectangle(image, (x, y), (x + ks, y + ks), (255, 255, 255), 2)
@@ -523,27 +734,23 @@ class GestureProcessor:
         if not active_keys or not reference_point:
             return
 
-        ARROW_COLOR = (0, 255, 255)
-        ARROW_LENGTH = 120
-        ARROW_THICKNESS = 3
+        ARROW_COLOR      = (0, 255, 255)
+        ARROW_LENGTH     = 120
+        ARROW_THICKNESS  = 3
         ARROW_TIP_LENGTH = 0.3
 
         height, width, _ = image.shape
         ref_x = int(reference_point[0] * width)
         ref_y = int(reference_point[1] * height)
 
-        km = self.key_mapping
+        km          = self.key_mapping
         direction_x = 0
         direction_y = 0
 
-        if km["right"] in active_keys:
-            direction_x += 1
-        if km["left"] in active_keys:
-            direction_x -= 1
-        if km["forward"] in active_keys:
-            direction_y -= 1
-        if km["backward"] in active_keys:
-            direction_y += 1
+        if km["right"]    in active_keys: direction_x += 1
+        if km["left"]     in active_keys: direction_x -= 1
+        if km["forward"]  in active_keys: direction_y -= 1
+        if km["backward"] in active_keys: direction_y += 1
 
         if direction_x == 0 and direction_y == 0:
             return
@@ -565,13 +772,22 @@ class GestureProcessor:
     def process_frame(self, frame):
         """Full processing pipeline for a single frame.
 
-        Flips, sends to MediaPipe, draws landmarks, processes controls,
-        draws WASD overlay. Returns the annotated BGR frame.
+        Flips the frame, queues it with MediaPipe detect_async, then:
+        - Updates the cached result when a fresh callback has fired.
+        - Runs gesture/control logic ONLY on fresh results (no redundant updates).
+        - Draws landmarks from the CACHED result every frame (fixes flickering).
+
+        Background: detect_async is non-blocking — the result_callback fires on
+        MediaPipe's internal thread some time later.  Calling get_latest_result()
+        immediately after detect_async frequently returns None (callback hasn't
+        fired yet), which used to cause every other frame to skip drawing, creating
+        the visible flicker.  Caching the last valid result and always drawing from
+        it eliminates the skip entirely.
         """
         frame = cv2.flip(frame, 1)
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        mp_image  = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
         timestamp_ms = int(time.time() * 1000)
         # MediaPipe requires strictly increasing timestamps
@@ -582,9 +798,14 @@ class GestureProcessor:
         self.landmarker.detect_async(mp_image, timestamp_ms)
 
         result = self.get_latest_result()
-        if result:
-            frame = self.draw_landmarks_on_image(frame, result)
-            self.process_left_hand_control(result)
+        if result is not None:
+            self._last_drawn_result = result        # refresh cache
+            self.process_left_hand_control(result)  # control logic on fresh data only
+            self.process_right_hand_gestures(result)
+
+        # Always draw from cache — never skips a frame
+        if self._last_drawn_result is not None:
+            frame = self.draw_landmarks_on_image(frame, self._last_drawn_result)
 
         self.draw_wasd_overlay(frame)
 
@@ -597,6 +818,7 @@ class GestureProcessor:
     def cleanup(self):
         """Release keys and close landmarker."""
         self.release_all_keys()
+        self.release_right_hand_gesture_key()
         if self.landmarker:
             self.landmarker.close()
             self.landmarker = None

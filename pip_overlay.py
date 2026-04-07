@@ -52,15 +52,26 @@ class PipOverlay(QWidget):
 
 
 class CameraWorker(QThread):
-    """Worker thread that captures camera frames, runs gesture processing, and emits annotated frames."""
+    """Worker thread: captures camera frames, runs gesture processing, emits annotated frames."""
 
     frame_ready = pyqtSignal(QImage)
-    error = pyqtSignal(str)
-    stopped = pyqtSignal()
+    error       = pyqtSignal(str)
+    stopped     = pyqtSignal()
+
+    # FIX (camera crash): only abort after this many *consecutive* cap.read()
+    # failures.  Cameras can drop individual frames on USB bandwidth spikes or
+    # driver hiccups — one failure should never kill the session.
+    _MAX_CONSECUTIVE_FAILURES = 5
+
+    # FIX (camera crash): cap the loop at 30 fps.  Without this the loop spins
+    # at full CPU speed, which overwhelms the camera driver over time
+    # (especially at 1920x1080) and eventually causes sustained read failures.
+    _TARGET_FPS      = 30
+    _TARGET_INTERVAL = 1.0 / _TARGET_FPS
 
     def __init__(self, config: GestureConfig, parent=None):
         super().__init__(parent)
-        self._config = config
+        self._config  = config
         self._running = False
 
     def run(self):
@@ -81,24 +92,36 @@ class CameraWorker(QThread):
             self.error.emit(f"MediaPipe error: {e}")
             return
 
-        self._running = True
-        prev_time = time.time()
+        self._running        = True
+        prev_time            = time.time()
+        consecutive_failures = 0
 
-        pip_w = int(width * self._config.pip_scale)
+        pip_w = int(width  * self._config.pip_scale)
         pip_h = int(height * self._config.pip_scale)
 
         try:
             while self._running:
+                frame_start = time.time()
+
                 ret, frame = cap.read()
                 if not ret:
-                    self.error.emit("Camera read failed")
-                    break
+                    consecutive_failures += 1
+                    if consecutive_failures >= self._MAX_CONSECUTIVE_FAILURES:
+                        self.error.emit(
+                            f"Camera read failed {consecutive_failures} times in a row"
+                        )
+                        break
+                    # Brief pause before retrying the dropped frame
+                    time.sleep(0.01)
+                    continue
+
+                consecutive_failures = 0  # reset on successful read
 
                 annotated = proc.process_frame(frame)
 
-                # FPS
-                now = time.time()
-                fps = 1 / max(now - prev_time, 1e-6)
+                # FPS counter
+                now      = time.time()
+                fps      = 1 / max(now - prev_time, 1e-6)
                 prev_time = now
                 proc.draw_fps(annotated, fps)
 
@@ -106,12 +129,23 @@ class CameraWorker(QThread):
                 display = cv2.resize(annotated, (pip_w, pip_h), interpolation=cv2.INTER_AREA)
 
                 # BGR -> RGB for QImage
-                rgb = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
-                h, w, ch = rgb.shape
+                rgb            = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
+                h, w, ch       = rgb.shape
                 bytes_per_line = ch * w
-                qimg = QImage(rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888).copy()
+                qimg = QImage(
+                    rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888
+                ).copy()
 
                 self.frame_ready.emit(qimg)
+
+                # Rate cap: sleep the remaining time to hit TARGET_FPS.
+                # Prevents the loop from spinning faster than the camera can
+                # deliver frames and stressing the driver.
+                elapsed   = time.time() - frame_start
+                remaining = self._TARGET_INTERVAL - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
+
         finally:
             proc.cleanup()
             cap.release()

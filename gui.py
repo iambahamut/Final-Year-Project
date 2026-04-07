@@ -11,10 +11,21 @@ from PyQt6.QtGui import QColor, QKeyEvent
 from config import GestureConfig
 from pip_overlay import CameraWorker, PipOverlay
 
-
 # ---------------------------------------------------------------------------
 # Custom widgets
 # ---------------------------------------------------------------------------
+
+_SPECIAL_KEY_NAMES = {
+    Qt.Key.Key_Space:     "space",
+    Qt.Key.Key_Return:    "enter",
+    Qt.Key.Key_Enter:     "enter",
+    Qt.Key.Key_Tab:       "tab",
+    Qt.Key.Key_Shift:     "shift",
+    Qt.Key.Key_Control:   "ctrl",
+    Qt.Key.Key_Alt:       "alt",
+    Qt.Key.Key_Backspace: "backspace",
+}
+
 
 class KeyCaptureButton(QPushButton):
     """Button that captures a single keypress for key binding."""
@@ -23,7 +34,7 @@ class KeyCaptureButton(QPushButton):
         super().__init__(key.upper(), parent)
         self._key = key
         self._listening = False
-        self.setFixedWidth(60)
+        self.setMinimumWidth(60)
         self.clicked.connect(self._start_listening)
 
     def _start_listening(self):
@@ -36,6 +47,10 @@ class KeyCaptureButton(QPushButton):
             super().keyPressEvent(event)
             return
         if event.key() == Qt.Key.Key_Escape:
+            self._stop_listening()
+            return
+        if event.key() in _SPECIAL_KEY_NAMES:
+            self._key = _SPECIAL_KEY_NAMES[event.key()]
             self._stop_listening()
             return
         text = event.text()
@@ -89,7 +104,7 @@ class ColorPickerButton(QPushButton):
 
 
 # ---------------------------------------------------------------------------
-# Helper: labelled slider for float values 0.0 – 1.0
+# Helper: labelled slider for float values 0.0 - 1.0
 # ---------------------------------------------------------------------------
 
 def _make_confidence_row(label_text: str, value: float):
@@ -125,7 +140,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         root_layout = QVBoxLayout(central)
 
-        # Tabs
         self.tabs = QTabWidget()
         root_layout.addWidget(self.tabs)
 
@@ -135,7 +149,6 @@ class MainWindow(QMainWindow):
         self._build_display_tab()
         self._build_colors_tab()
 
-        # Bottom bar
         bottom = QHBoxLayout()
         self.btn_defaults = QPushButton("Restore Defaults")
         self.btn_defaults.clicked.connect(self._restore_defaults)
@@ -151,7 +164,6 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.btn_start)
         root_layout.addLayout(bottom)
 
-        # Populate with defaults
         self._populate(GestureConfig())
 
     # ------------------------------------------------------------------
@@ -176,7 +188,6 @@ class MainWindow(QMainWindow):
         self.spin_height.setSingleStep(120)
         layout.addRow("Resolution Height:", self.spin_height)
 
-        # Confidence sliders
         row1, self.slider_detection, _ = _make_confidence_row("Hand Detection Confidence:", 0.7)
         layout.addRow(row1)
         row2, self.slider_presence, _ = _make_confidence_row("Hand Presence Confidence:", 0.5)
@@ -225,33 +236,61 @@ class MainWindow(QMainWindow):
         self.spin_proximity.setDecimals(2)
         layout.addRow("Hand Proximity Threshold:", self.spin_proximity)
 
+        self.spin_pinch_dist = QDoubleSpinBox()
+        self.spin_pinch_dist.setRange(0.01, 0.20)
+        self.spin_pinch_dist.setSingleStep(0.005)
+        self.spin_pinch_dist.setDecimals(3)
+        layout.addRow("Pinch Distance Threshold:", self.spin_pinch_dist)
+
+        self.spin_curl_ratio = QDoubleSpinBox()
+        self.spin_curl_ratio.setRange(0.5, 1.0)
+        self.spin_curl_ratio.setSingleStep(0.05)
+        self.spin_curl_ratio.setDecimals(2)
+        layout.addRow("Finger Curl Max Ratio:", self.spin_curl_ratio)
+
         self.tabs.addTab(tab, "Gesture Thresholds")
 
     def _build_keys_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Checkboxes
         self.chk_keypresses = QCheckBox("Enable Actual Keypresses")
         self.chk_debug = QCheckBox("Enable Debug Output")
         layout.addWidget(self.chk_keypresses)
         layout.addWidget(self.chk_debug)
 
-        # Key mapping
         group = QGroupBox("Key Mapping")
         form = QFormLayout(group)
 
-        self.key_forward = KeyCaptureButton("w")
+        self.key_forward  = KeyCaptureButton("w")
         self.key_backward = KeyCaptureButton("s")
-        self.key_left = KeyCaptureButton("a")
-        self.key_right = KeyCaptureButton("d")
+        self.key_left     = KeyCaptureButton("a")
+        self.key_right    = KeyCaptureButton("d")
 
-        form.addRow("Forward:", self.key_forward)
+        form.addRow("Forward:",  self.key_forward)
         form.addRow("Backward:", self.key_backward)
-        form.addRow("Left:", self.key_left)
-        form.addRow("Right:", self.key_right)
+        form.addRow("Left:",     self.key_left)
+        form.addRow("Right:",    self.key_right)
 
         layout.addWidget(group)
+
+        gesture_group = QGroupBox("Right-Hand Gesture Keys")
+        gesture_form = QFormLayout(gesture_group)
+
+        self.chk_right_gestures = QCheckBox("Enable Right-Hand Gestures")
+        gesture_form.addRow(self.chk_right_gestures)
+
+        self.key_pinch    = KeyCaptureButton("e")
+        self.key_thumbsup = KeyCaptureButton("space")
+        self.key_palm     = KeyCaptureButton("f")
+        self.key_point    = KeyCaptureButton("q")
+
+        gesture_form.addRow("Pinch:",     self.key_pinch)
+        gesture_form.addRow("Thumbs Up:", self.key_thumbsup)
+        gesture_form.addRow("Flat Palm:", self.key_palm)
+        gesture_form.addRow("Point:",     self.key_point)
+
+        layout.addWidget(gesture_group)
         layout.addStretch()
         self.tabs.addTab(tab, "Keys && Controls")
 
@@ -294,32 +333,27 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QFormLayout(tab)
 
-        self.color_left_hand = ColorPickerButton([255, 0, 0])
-        layout.addRow("Left Hand Color:", self.color_left_hand)
-
-        self.color_right_hand = ColorPickerButton([0, 0, 255])
-        layout.addRow("Right Hand Color:", self.color_right_hand)
-
+        self.color_left_hand    = ColorPickerButton([255, 0, 0])
+        self.color_right_hand   = ColorPickerButton([0, 0, 255])
         self.color_key_inactive = ColorPickerButton([60, 60, 60])
-        layout.addRow("Key Inactive Color:", self.color_key_inactive)
-
-        self.color_key_active = ColorPickerButton([0, 255, 0])
-        layout.addRow("Key Active Color:", self.color_key_active)
-
+        self.color_key_active   = ColorPickerButton([0, 255, 0])
         self.color_text_inactive = ColorPickerButton([180, 180, 180])
-        layout.addRow("Text Inactive Color:", self.color_text_inactive)
+        self.color_text_active  = ColorPickerButton([0, 0, 0])
 
-        self.color_text_active = ColorPickerButton([0, 0, 0])
-        layout.addRow("Text Active Color:", self.color_text_active)
+        layout.addRow("Left Hand Color:",    self.color_left_hand)
+        layout.addRow("Right Hand Color:",   self.color_right_hand)
+        layout.addRow("Key Inactive Color:", self.color_key_inactive)
+        layout.addRow("Key Active Color:",   self.color_key_active)
+        layout.addRow("Text Inactive Color:", self.color_text_inactive)
+        layout.addRow("Text Active Color:",  self.color_text_active)
 
         self.tabs.addTab(tab, "Colors")
 
     # ------------------------------------------------------------------
-    # Config ↔ widgets
+    # Config <-> widgets
     # ------------------------------------------------------------------
 
     def _populate(self, cfg: GestureConfig):
-        # Camera
         self.spin_camera_index.setValue(cfg.camera_index)
         self.spin_width.setValue(cfg.desired_width)
         self.spin_height.setValue(cfg.desired_height)
@@ -327,15 +361,15 @@ class MainWindow(QMainWindow):
         self.slider_presence.setValue(int(cfg.min_hand_presence_confidence * 100))
         self.slider_tracking.setValue(int(cfg.min_tracking_confidence * 100))
 
-        # Gesture
         self.spin_palm_ext.setValue(cfg.palm_extension_threshold)
         self.spin_palm_fingers.setValue(cfg.palm_min_fingers)
         self.spin_move_activate.setValue(cfg.movement_threshold_activate)
         self.spin_move_release.setValue(cfg.movement_threshold_release)
         self.spin_grace.setValue(cfg.hand_loss_grace_period)
         self.spin_proximity.setValue(cfg.hand_proximity_threshold)
+        self.spin_pinch_dist.setValue(cfg.pinch_distance_threshold)
+        self.spin_curl_ratio.setValue(cfg.finger_curl_max_ratio)
 
-        # Keys
         self.chk_keypresses.setChecked(cfg.enable_actual_keypresses)
         self.chk_debug.setChecked(cfg.enable_debug_output)
         self.key_forward.set_key(cfg.key_forward)
@@ -343,7 +377,12 @@ class MainWindow(QMainWindow):
         self.key_left.set_key(cfg.key_left)
         self.key_right.set_key(cfg.key_right)
 
-        # Display
+        self.chk_right_gestures.setChecked(cfg.enable_right_hand_gestures)
+        self.key_pinch.set_key(cfg.gesture_pinch_key)
+        self.key_thumbsup.set_key(cfg.gesture_thumbsup_key)
+        self.key_palm.set_key(cfg.gesture_palm_key)
+        self.key_point.set_key(cfg.gesture_point_key)
+
         self.spin_pip_scale.setValue(cfg.pip_scale)
         self.chk_wasd_overlay.setChecked(cfg.wasd_overlay_enabled)
         self.spin_key_size.setValue(cfg.wasd_key_size)
@@ -351,7 +390,6 @@ class MainWindow(QMainWindow):
         self.spin_overlay_x.setValue(cfg.wasd_overlay_x)
         self.spin_overlay_y.setValue(cfg.wasd_overlay_y_offset)
 
-        # Colors
         self.color_left_hand.set_bgr(cfg.color_left_hand)
         self.color_right_hand.set_bgr(cfg.color_right_hand)
         self.color_key_inactive.set_bgr(cfg.wasd_key_color_inactive)
@@ -373,12 +411,19 @@ class MainWindow(QMainWindow):
             movement_threshold_release=self.spin_move_release.value(),
             hand_loss_grace_period=self.spin_grace.value(),
             hand_proximity_threshold=self.spin_proximity.value(),
+            pinch_distance_threshold=self.spin_pinch_dist.value(),
+            finger_curl_max_ratio=self.spin_curl_ratio.value(),
             enable_actual_keypresses=self.chk_keypresses.isChecked(),
             enable_debug_output=self.chk_debug.isChecked(),
             key_forward=self.key_forward.get_key(),
             key_backward=self.key_backward.get_key(),
             key_left=self.key_left.get_key(),
             key_right=self.key_right.get_key(),
+            enable_right_hand_gestures=self.chk_right_gestures.isChecked(),
+            gesture_pinch_key=self.key_pinch.get_key(),
+            gesture_thumbsup_key=self.key_thumbsup.get_key(),
+            gesture_palm_key=self.key_palm.get_key(),
+            gesture_point_key=self.key_point.get_key(),
             pip_scale=self.spin_pip_scale.value(),
             color_left_hand=self.color_left_hand.get_bgr(),
             color_right_hand=self.color_right_hand.get_bgr(),

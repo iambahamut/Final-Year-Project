@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass, field, asdict
 import json
 
@@ -34,6 +35,17 @@ class GestureConfig:
     key_left: str = "a"
     key_right: str = "d"
 
+    # Right-hand gesture keys
+    enable_right_hand_gestures: bool = True
+    gesture_pinch_key: str = "e"
+    gesture_thumbsup_key: str = "space"
+    gesture_palm_key: str = "f"
+    gesture_point_key: str = "q"
+
+    # Right-hand gesture thresholds
+    pinch_distance_threshold: float = 0.06
+    finger_curl_max_ratio: float = 0.9
+
     # PiP
     pip_scale: float = 0.4
 
@@ -59,4 +71,6 @@ class GestureConfig:
     @classmethod
     def from_json(cls, path: str) -> "GestureConfig":
         with open(path, "r") as f:
-            return cls(**json.load(f))
+            data = json.load(f)
+        known = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
