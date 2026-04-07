@@ -9,10 +9,12 @@ from mediapipe.tasks.python import vision
 
 try:
     from pynput.keyboard import Controller, Key as PynputKey
+    from pynput.mouse import Controller as MouseController, Button as MouseButton
     PYNPUT_AVAILABLE = True
 except ImportError:
     PYNPUT_AVAILABLE = False
     PynputKey = None
+    MouseButton = None
 
 from config import GestureConfig
 
@@ -40,6 +42,10 @@ if PynputKey:
         "backspace": PynputKey.backspace,
         "esc":       PynputKey.esc,
     }
+if MouseButton:
+    SPECIAL_KEY_MAP["mouse_left"]   = MouseButton.left
+    SPECIAL_KEY_MAP["mouse_right"]  = MouseButton.right
+    SPECIAL_KEY_MAP["mouse_middle"] = MouseButton.middle
 
 
 def resolve_key(key_string):
@@ -67,8 +73,9 @@ class GestureProcessor:
         # are drawn every frame even when detect_async hasn't fired yet.
         self._last_drawn_result = None
 
-        # Keyboard controller
+        # Input controllers
         self.keyboard_controller = None
+        self.mouse_controller = None
 
         # Hand control state
         self.controlling_hand_state = {
@@ -136,7 +143,7 @@ class GestureProcessor:
         return cap, actual_width, actual_height
 
     def init_keyboard(self):
-        """Initialize pynput keyboard controller."""
+        """Initialize pynput keyboard and mouse controllers."""
         if PYNPUT_AVAILABLE and self.cfg.enable_actual_keypresses:
             try:
                 self.keyboard_controller = Controller()
@@ -144,12 +151,35 @@ class GestureProcessor:
             except Exception:
                 self.keyboard_controller = None
                 print("Keyboard controller initialization failed - print-only mode")
+            try:
+                self.mouse_controller = MouseController()
+                print("Mouse controller initialized")
+            except Exception:
+                self.mouse_controller = None
+                print("Mouse controller initialization failed")
         else:
             self.keyboard_controller = None
+            self.mouse_controller = None
             if not PYNPUT_AVAILABLE:
                 print("Keyboard controller not available - print-only mode")
             else:
                 print("Keyboard controller disabled - print-only mode")
+
+    def _press_action(self, resolved_key):
+        """Press a key or mouse button via the appropriate controller."""
+        if MouseButton and isinstance(resolved_key, MouseButton):
+            if self.mouse_controller is not None:
+                self.mouse_controller.press(resolved_key)
+        elif self.keyboard_controller is not None:
+            self.keyboard_controller.press(resolved_key)
+
+    def _release_action(self, resolved_key):
+        """Release a key or mouse button via the appropriate controller."""
+        if MouseButton and isinstance(resolved_key, MouseButton):
+            if self.mouse_controller is not None:
+                self.mouse_controller.release(resolved_key)
+        elif self.keyboard_controller is not None:
+            self.keyboard_controller.release(resolved_key)
 
     def init_landmarker(self):
         """Create and return MediaPipe HandLandmarker. Also stores it as self.landmarker."""
@@ -471,21 +501,19 @@ class GestureProcessor:
         for key in target_keys - active:
             if self.cfg.enable_debug_output:
                 print(f"KEY PRESS: {key.upper()}")
-            if self.keyboard_controller is not None:
-                try:
-                    self.keyboard_controller.press(key)
-                except Exception:
-                    pass
+            try:
+                self._press_action(key)
+            except Exception:
+                pass
 
         # Release old keys
         for key in active - target_keys:
             if self.cfg.enable_debug_output:
                 print(f"KEY RELEASE: {key.upper()}")
-            if self.keyboard_controller is not None:
-                try:
-                    self.keyboard_controller.release(key)
-                except Exception:
-                    pass
+            try:
+                self._release_action(key)
+            except Exception:
+                pass
 
         self.controlling_hand_state["active_keys"] = target_keys
 
@@ -549,11 +577,10 @@ class GestureProcessor:
         for key in self.controlling_hand_state["active_keys"]:
             if self.cfg.enable_debug_output:
                 print(f"KEY RELEASE: {key.upper()}")
-            if self.keyboard_controller is not None:
-                try:
-                    self.keyboard_controller.release(key)
-                except Exception:
-                    pass
+            try:
+                self._release_action(key)
+            except Exception:
+                pass
         self.controlling_hand_state["active_keys"] = set()
 
     def reset_control(self):
@@ -591,11 +618,10 @@ class GestureProcessor:
         if prev_key is not None:
             if self.cfg.enable_debug_output:
                 print(f"RIGHT GESTURE RELEASE: {prev_gesture}")
-            if self.keyboard_controller is not None:
-                try:
-                    self.keyboard_controller.release(prev_key)
-                except Exception:
-                    pass
+            try:
+                self._release_action(prev_key)
+            except Exception:
+                pass
 
         # Press new key
         if detected_gesture is not None:
@@ -603,11 +629,10 @@ class GestureProcessor:
             resolved   = resolve_key(key_string)
             if self.cfg.enable_debug_output:
                 print(f"RIGHT GESTURE PRESS: {detected_gesture} -> {key_string}")
-            if self.keyboard_controller is not None:
-                try:
-                    self.keyboard_controller.press(resolved)
-                except Exception:
-                    pass
+            try:
+                self._press_action(resolved)
+            except Exception:
+                pass
             self.right_hand_gesture_state["active_gesture"] = detected_gesture
             self.right_hand_gesture_state["active_key"]     = resolved
         else:
@@ -617,11 +642,10 @@ class GestureProcessor:
     def release_right_hand_gesture_key(self):
         """Release any currently held right-hand gesture key."""
         if self.right_hand_gesture_state["active_key"] is not None:
-            if self.keyboard_controller is not None:
-                try:
-                    self.keyboard_controller.release(self.right_hand_gesture_state["active_key"])
-                except Exception:
-                    pass
+            try:
+                self._release_action(self.right_hand_gesture_state["active_key"])
+            except Exception:
+                pass
             self.right_hand_gesture_state["active_gesture"] = None
             self.right_hand_gesture_state["active_key"]     = None
 

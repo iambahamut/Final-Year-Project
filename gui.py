@@ -1,6 +1,7 @@
 #GUI
 
 import sys
+import time
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
@@ -30,19 +31,43 @@ _SPECIAL_KEY_NAMES = {
 
 
 class KeyCaptureButton(QPushButton):
-    """Button that captures a single keypress for key binding."""
+    """Button that captures a single keypress or mouse click for binding."""
 
     def __init__(self, key: str, parent=None):
-        super().__init__(key.upper(), parent)
+        super().__init__(self._display_text(key), parent)
         self._key = key
         self._listening = False
-        self.setMinimumWidth(60)
+        self._listen_start_time = 0.0
+        self.setMinimumWidth(80)
         self.clicked.connect(self._start_listening)
+
+    @staticmethod
+    def _display_text(key: str) -> str:
+        """Format key name for display."""
+        return key.upper().replace("_", " ")
 
     def _start_listening(self):
         self._listening = True
+        self._listen_start_time = time.time()
         self.setText("...")
         self.grabKeyboard()
+
+    def mousePressEvent(self, event):
+        if self._listening and (time.time() - self._listen_start_time) > 0.3:
+            button = event.button()
+            if button == Qt.MouseButton.LeftButton:
+                self._key = "mouse_left"
+                self._stop_listening()
+                return
+            elif button == Qt.MouseButton.RightButton:
+                self._key = "mouse_right"
+                self._stop_listening()
+                return
+            elif button == Qt.MouseButton.MiddleButton:
+                self._key = "mouse_middle"
+                self._stop_listening()
+                return
+        super().mousePressEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):
         if not self._listening:
@@ -63,14 +88,14 @@ class KeyCaptureButton(QPushButton):
     def _stop_listening(self):
         self._listening = False
         self.releaseKeyboard()
-        self.setText(self._key.upper())
+        self.setText(self._display_text(self._key))
 
     def get_key(self) -> str:
         return self._key
 
     def set_key(self, key: str):
         self._key = key
-        self.setText(key.upper())
+        self.setText(self._display_text(key))
 
 
 class ColorPickerButton(QPushButton):
