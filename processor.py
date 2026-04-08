@@ -918,8 +918,20 @@ class GestureProcessor:
         result = self.get_latest_result()
         if result is not None:
             self._last_drawn_result = result        # refresh cache
-            self.process_left_hand_control(result)  # control logic on fresh data only
-            self.process_right_hand_gestures(result)
+            try:
+                self.process_left_hand_control(result)
+                self.process_right_hand_gestures(result)
+            except Exception as e:
+                if self.cfg.enable_debug_output:
+                    print(f"Frame processing error: {e}")
+        else:
+            # No fresh result — still tick gesture debounce so held keys
+            # get released when the hand leaves the camera frame.
+            try:
+                self.process_right_hand_gestures(None)
+            except Exception as e:
+                if self.cfg.enable_debug_output:
+                    print(f"Frame processing error: {e}")
 
         # Always draw from cache — never skips a frame
         if self._last_drawn_result is not None:
