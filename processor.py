@@ -33,14 +33,28 @@ COLOR_FPS = (0, 255, 0)
 SPECIAL_KEY_MAP = {}
 if PynputKey:
     SPECIAL_KEY_MAP = {
-        "space":     PynputKey.space,
-        "enter":     PynputKey.enter,
-        "tab":       PynputKey.tab,
-        "shift":     PynputKey.shift,
-        "ctrl":      PynputKey.ctrl,
-        "alt":       PynputKey.alt,
-        "backspace": PynputKey.backspace,
-        "esc":       PynputKey.esc,
+        # Common keys
+        "space": PynputKey.space, "enter": PynputKey.enter, "tab": PynputKey.tab,
+        "backspace": PynputKey.backspace, "esc": PynputKey.esc,
+        # Modifiers
+        "shift": PynputKey.shift, "ctrl": PynputKey.ctrl, "alt": PynputKey.alt,
+        "caps_lock": PynputKey.caps_lock, "cmd": PynputKey.cmd,
+        # Function keys
+        "f1": PynputKey.f1, "f2": PynputKey.f2, "f3": PynputKey.f3,
+        "f4": PynputKey.f4, "f5": PynputKey.f5, "f6": PynputKey.f6,
+        "f7": PynputKey.f7, "f8": PynputKey.f8, "f9": PynputKey.f9,
+        "f10": PynputKey.f10, "f11": PynputKey.f11, "f12": PynputKey.f12,
+        # Arrow keys
+        "up": PynputKey.up, "down": PynputKey.down,
+        "left": PynputKey.left, "right": PynputKey.right,
+        # Navigation
+        "home": PynputKey.home, "end": PynputKey.end,
+        "page_up": PynputKey.page_up, "page_down": PynputKey.page_down,
+        "insert": PynputKey.insert, "delete": PynputKey.delete,
+        # Lock / special
+        "num_lock": PynputKey.num_lock, "scroll_lock": PynputKey.scroll_lock,
+        "pause": PynputKey.pause, "print_screen": PynputKey.print_screen,
+        "menu": PynputKey.menu,
     }
 if MouseButton:
     SPECIAL_KEY_MAP["mouse_left"]   = MouseButton.left
