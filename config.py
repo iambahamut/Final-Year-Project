@@ -37,9 +37,9 @@ class GestureConfig:
 
     # Right-hand gesture keys
     enable_right_hand_gestures: bool = True
-    gesture_pinch_key: str = "k"
-    gesture_thumbsup_key: str = "e"
-    gesture_palm_key: str = "j"
+    gesture_pinch_key: str = "z"
+    gesture_thumbsup_key: str = "x"
+    gesture_palm_key: str = "c"
     gesture_point_key: str = "q"
 
     # Right-hand gesture thresholds
