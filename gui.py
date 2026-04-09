@@ -1,5 +1,3 @@
-#GUI
-
 import sys
 import time
 
@@ -20,34 +18,34 @@ from pip_overlay import CameraWorker, PipOverlay
 
 _SPECIAL_KEY_NAMES = {
     # Common keys
-    Qt.Key.Key_Space:       "space",
-    Qt.Key.Key_Return:      "enter",
-    Qt.Key.Key_Enter:       "enter",
-    Qt.Key.Key_Tab:         "tab",
-    Qt.Key.Key_Backspace:   "backspace",
-    Qt.Key.Key_Escape:      "esc",
+    Qt.Key.Key_Space: "space",
+    Qt.Key.Key_Return: "enter",
+    Qt.Key.Key_Enter: "enter",
+    Qt.Key.Key_Tab: "tab",
+    Qt.Key.Key_Backspace: "backspace",
+    Qt.Key.Key_Escape: "esc",
     # Modifiers
-    Qt.Key.Key_Shift:       "shift",
-    Qt.Key.Key_Control:     "ctrl",
-    Qt.Key.Key_Alt:         "alt",
-    Qt.Key.Key_CapsLock:    "caps_lock",
-    Qt.Key.Key_Meta:        "cmd",
+    Qt.Key.Key_Shift: "shift",
+    Qt.Key.Key_Control: "ctrl",
+    Qt.Key.Key_Alt: "alt",
+    Qt.Key.Key_CapsLock: "caps_lock",
+    Qt.Key.Key_Meta: "cmd",
     # Function keys
-    Qt.Key.Key_F1:  "f1",  Qt.Key.Key_F2:  "f2",  Qt.Key.Key_F3:  "f3",
-    Qt.Key.Key_F4:  "f4",  Qt.Key.Key_F5:  "f5",  Qt.Key.Key_F6:  "f6",
-    Qt.Key.Key_F7:  "f7",  Qt.Key.Key_F8:  "f8",  Qt.Key.Key_F9:  "f9",
+    Qt.Key.Key_F1: "f1", Qt.Key.Key_F2: "f2", Qt.Key.Key_F3: "f3",
+    Qt.Key.Key_F4: "f4", Qt.Key.Key_F5: "f5", Qt.Key.Key_F6: "f6",
+    Qt.Key.Key_F7: "f7", Qt.Key.Key_F8: "f8", Qt.Key.Key_F9: "f9",
     Qt.Key.Key_F10: "f10", Qt.Key.Key_F11: "f11", Qt.Key.Key_F12: "f12",
     # Arrow keys
-    Qt.Key.Key_Up:    "up",    Qt.Key.Key_Down:  "down",
-    Qt.Key.Key_Left:  "left",  Qt.Key.Key_Right: "right",
+    Qt.Key.Key_Up: "up", Qt.Key.Key_Down: "down",
+    Qt.Key.Key_Left: "left", Qt.Key.Key_Right: "right",
     # Navigation
-    Qt.Key.Key_Home:     "home",      Qt.Key.Key_End:      "end",
-    Qt.Key.Key_PageUp:   "page_up",   Qt.Key.Key_PageDown: "page_down",
-    Qt.Key.Key_Insert:   "insert",    Qt.Key.Key_Delete:   "delete",
+    Qt.Key.Key_Home: "home", Qt.Key.Key_End: "end",
+    Qt.Key.Key_PageUp: "page_up", Qt.Key.Key_PageDown: "page_down",
+    Qt.Key.Key_Insert: "insert", Qt.Key.Key_Delete: "delete",
     # Lock / special
-    Qt.Key.Key_NumLock:    "num_lock",     Qt.Key.Key_ScrollLock: "scroll_lock",
-    Qt.Key.Key_Pause:      "pause",        Qt.Key.Key_Print:      "print_screen",
-    Qt.Key.Key_Menu:       "menu",
+    Qt.Key.Key_NumLock: "num_lock", Qt.Key.Key_ScrollLock: "scroll_lock",
+    Qt.Key.Key_Pause: "pause", Qt.Key.Key_Print: "print_screen",
+    Qt.Key.Key_Menu: "menu",
 }
 
 
@@ -200,19 +198,27 @@ class MainWindow(QMainWindow):
         bottom = QHBoxLayout()
         self.btn_defaults = QPushButton("Restore Defaults")
         self.btn_defaults.clicked.connect(self._restore_defaults)
+        # FIX: Save Settings button persists widget state to config.json
+        self.btn_save = QPushButton("Save Settings")
+        self.btn_save.clicked.connect(self._save_settings)
         self.status_label = QLabel("Ready")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.btn_start = QPushButton("Start")
         self.btn_start.setFixedWidth(100)
         self.btn_start.clicked.connect(self._toggle_start_stop)
         bottom.addWidget(self.btn_defaults)
+        bottom.addWidget(self.btn_save)
         bottom.addStretch()
         bottom.addWidget(self.status_label)
         bottom.addStretch()
         bottom.addWidget(self.btn_start)
         root_layout.addLayout(bottom)
 
-        self._populate(GestureConfig())
+        # FIX: Load saved config.json on startup; fall back to defaults if absent
+        try:
+            self._populate(GestureConfig.from_json("config.json"))
+        except Exception:
+            self._populate(GestureConfig())
 
     # ------------------------------------------------------------------
     # Tab builders
@@ -310,15 +316,15 @@ class MainWindow(QMainWindow):
         group = QGroupBox("Key Mapping")
         form = QFormLayout(group)
 
-        self.key_forward  = KeyCaptureButton("w")
+        self.key_forward = KeyCaptureButton("w")
         self.key_backward = KeyCaptureButton("s")
-        self.key_left     = KeyCaptureButton("a")
-        self.key_right    = KeyCaptureButton("d")
+        self.key_left = KeyCaptureButton("a")
+        self.key_right = KeyCaptureButton("d")
 
-        form.addRow("Forward:",  self.key_forward)
+        form.addRow("Forward:", self.key_forward)
         form.addRow("Backward:", self.key_backward)
-        form.addRow("Left:",     self.key_left)
-        form.addRow("Right:",    self.key_right)
+        form.addRow("Left:", self.key_left)
+        form.addRow("Right:", self.key_right)
 
         layout.addWidget(group)
 
@@ -328,15 +334,15 @@ class MainWindow(QMainWindow):
         self.chk_right_gestures = QCheckBox("Enable Right-Hand Gestures")
         gesture_form.addRow(self.chk_right_gestures)
 
-        self.key_pinch    = KeyCaptureButton("e")
+        self.key_pinch = KeyCaptureButton("e")
         self.key_thumbsup = KeyCaptureButton("space")
-        self.key_palm     = KeyCaptureButton("f")
-        self.key_point    = KeyCaptureButton("q")
+        self.key_palm = KeyCaptureButton("f")
+        self.key_point = KeyCaptureButton("q")
 
-        gesture_form.addRow("Pinch:",     self.key_pinch)
+        gesture_form.addRow("Pinch:", self.key_pinch)
         gesture_form.addRow("Thumbs Up:", self.key_thumbsup)
         gesture_form.addRow("Flat Palm:", self.key_palm)
-        gesture_form.addRow("Point:",     self.key_point)
+        gesture_form.addRow("Point:", self.key_point)
 
         layout.addWidget(gesture_group)
         layout.addStretch()
@@ -381,19 +387,19 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QFormLayout(tab)
 
-        self.color_left_hand    = ColorPickerButton([255, 0, 0])
-        self.color_right_hand   = ColorPickerButton([0, 0, 255])
+        self.color_left_hand = ColorPickerButton([255, 0, 0])
+        self.color_right_hand = ColorPickerButton([0, 0, 255])
         self.color_key_inactive = ColorPickerButton([60, 60, 60])
-        self.color_key_active   = ColorPickerButton([0, 255, 0])
+        self.color_key_active = ColorPickerButton([0, 255, 0])
         self.color_text_inactive = ColorPickerButton([180, 180, 180])
-        self.color_text_active  = ColorPickerButton([0, 0, 0])
+        self.color_text_active = ColorPickerButton([0, 0, 0])
 
-        layout.addRow("Left Hand Color:",    self.color_left_hand)
-        layout.addRow("Right Hand Color:",   self.color_right_hand)
+        layout.addRow("Left Hand Color:", self.color_left_hand)
+        layout.addRow("Right Hand Color:", self.color_right_hand)
         layout.addRow("Key Inactive Color:", self.color_key_inactive)
-        layout.addRow("Key Active Color:",   self.color_key_active)
+        layout.addRow("Key Active Color:", self.color_key_active)
         layout.addRow("Text Inactive Color:", self.color_text_inactive)
-        layout.addRow("Text Active Color:",  self.color_text_active)
+        layout.addRow("Text Active Color:", self.color_text_active)
 
         self.tabs.addTab(tab, "Colors")
 
@@ -492,6 +498,11 @@ class MainWindow(QMainWindow):
 
     def _restore_defaults(self):
         self._populate(GestureConfig())
+
+    def _save_settings(self):
+        """Persist current widget state to config.json."""
+        self._collect().to_json("config.json")
+        self.status_label.setText("Settings saved.")
 
     def _toggle_start_stop(self):
         if self.worker is not None and self.worker.isRunning():
