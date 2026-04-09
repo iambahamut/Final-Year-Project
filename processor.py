@@ -296,17 +296,30 @@ class GestureProcessor:
         )
         return curled_count >= 4
 
+    @staticmethod
+    def _thumb_straightness(hand_landmarks):
+        """Ratio of direct CMC-to-TIP distance vs sum of thumb bone segments.
+        1.0 = perfectly straight, ~0.3 = curled. Camera-distance agnostic."""
+        chain = [1, 2, 3, 4]  # CMC -> MCP -> IP -> TIP
+        total_seg = 0.0
+        for i in range(len(chain) - 1):
+            a, b = hand_landmarks[chain[i]], hand_landmarks[chain[i + 1]]
+            total_seg += ((a.x - b.x)**2 + (a.y - b.y)**2 + (a.z - b.z)**2) ** 0.5
+        if total_seg < 1e-7:
+            return 0.0
+        base, tip = hand_landmarks[chain[0]], hand_landmarks[chain[-1]]
+        direct = ((tip.x - base.x)**2 + (tip.y - base.y)**2 + (tip.z - base.z)**2) ** 0.5
+        return direct / total_seg
+
     def _thumb_truly_extended(self, hand_landmarks):
         """Stricter thumb extension check that resists fist false positives."""
-        wrist     = hand_landmarks[0]
         thumb_tip = hand_landmarks[4]
         thumb_mcp = hand_landmarks[2]
-        index_mcp = hand_landmarks[5]
 
-        # Check 1: Wrist-relative distance ratio with stricter threshold
-        tip_dist  = ((thumb_tip.x - wrist.x)**2 + (thumb_tip.y - wrist.y)**2 + (thumb_tip.z - wrist.z)**2) ** 0.5
-        base_dist = ((thumb_mcp.x - wrist.x)**2 + (thumb_mcp.y - wrist.y)**2 + (thumb_mcp.z - wrist.z)**2) ** 0.5
-        if base_dist < 1e-7 or tip_dist <= base_dist * self.cfg.thumb_extended_min_ratio:
+        # Check 1: Thumb must be physically straight (not curled around fist).
+        # This is camera-distance agnostic — a curled thumb has low straightness
+        # regardless of how close the hand is.
+        if self._thumb_straightness(hand_landmarks) < 0.7:
             return False
 
         # Check 2: Thumb tip must be meaningfully above MCP (y decreases upward)
@@ -314,6 +327,7 @@ class GestureProcessor:
             return False
 
         # Check 3: Thumb tip must be away from index MCP (not wrapped around fist)
+        index_mcp = hand_landmarks[5]
         thumb_to_index_mcp = ((thumb_tip.x - index_mcp.x)**2 + (thumb_tip.y - index_mcp.y)**2 + (thumb_tip.z - index_mcp.z)**2) ** 0.5
         if thumb_to_index_mcp < self.cfg.thumbs_up_min_thumb_openness:
             return False
