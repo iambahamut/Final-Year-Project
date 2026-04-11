@@ -994,9 +994,9 @@ class GestureProcessor:
                 self._clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(tile, tile))
                 self._clahe_params = params
             lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-            l, a_ch, b_ch = cv2.split(lab)
-            l = self._clahe.apply(l)
-            frame = cv2.cvtColor(cv2.merge([l, a_ch, b_ch]), cv2.COLOR_LAB2BGR)
+            l_ch, a_ch, b_ch = cv2.split(lab)
+            l_ch = self._clahe.apply(l_ch)
+            frame = cv2.cvtColor(cv2.merge([l_ch, a_ch, b_ch]), cv2.COLOR_LAB2BGR)
 
         if gamma_on and abs(gamma_val - 1.0) > 1e-3:
             frame = cv2.LUT(frame, self._get_gamma_lut(gamma_val))
