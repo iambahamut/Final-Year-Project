@@ -206,6 +206,7 @@ class MainWindow(QMainWindow):
 
         self._build_camera_tab()
         self._build_gesture_tab()
+        self._build_preprocess_tab()
         self._build_keys_tab()
         self._build_display_tab()
         self._build_colors_tab()
@@ -366,6 +367,55 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(tab, "Gesture Thresholds")
 
+    def _build_preprocess_tab(self):
+        tab = QWidget()
+        layout = QFormLayout(tab)
+
+        self.chk_clahe = QCheckBox("Enable CLAHE")
+        layout.addRow(self.chk_clahe)
+
+        self.spin_clahe_clip = QDoubleSpinBox()
+        self.spin_clahe_clip.setRange(0.5, 10.0)
+        self.spin_clahe_clip.setSingleStep(0.5)
+        self.spin_clahe_clip.setDecimals(1)
+        layout.addRow("CLAHE Clip Limit:", self.spin_clahe_clip)
+
+        self.spin_clahe_tile = QSpinBox()
+        self.spin_clahe_tile.setRange(2, 16)
+        layout.addRow("CLAHE Tile Size:", self.spin_clahe_tile)
+
+        self.chk_gamma = QCheckBox("Enable Gamma Correction")
+        layout.addRow(self.chk_gamma)
+
+        self.spin_gamma = QDoubleSpinBox()
+        self.spin_gamma.setRange(0.3, 3.0)
+        self.spin_gamma.setSingleStep(0.05)
+        self.spin_gamma.setDecimals(2)
+        layout.addRow("Gamma Value (1.0 = off):", self.spin_gamma)
+
+        self.chk_auto = QCheckBox("Enable Auto-Brightness (adaptive)")
+        layout.addRow(self.chk_auto)
+
+        self.spin_auto_target = QSpinBox()
+        self.spin_auto_target.setRange(40, 220)
+        layout.addRow("Auto Target Brightness:", self.spin_auto_target)
+
+        self.spin_auto_low = QSpinBox()
+        self.spin_auto_low.setRange(0, 200)
+        layout.addRow("Auto Dark Threshold:", self.spin_auto_low)
+
+        self.spin_auto_high = QSpinBox()
+        self.spin_auto_high.setRange(50, 255)
+        layout.addRow("Auto Bright Threshold:", self.spin_auto_high)
+
+        self.spin_auto_smooth = QDoubleSpinBox()
+        self.spin_auto_smooth.setRange(0.05, 1.0)
+        self.spin_auto_smooth.setSingleStep(0.05)
+        self.spin_auto_smooth.setDecimals(2)
+        layout.addRow("Auto EMA Smoothing:", self.spin_auto_smooth)
+
+        self.tabs.addTab(tab, "Preprocessing")
+
     def _build_keys_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -503,6 +553,17 @@ class MainWindow(QMainWindow):
         self.spin_pinch_dist.setValue(cfg.pinch_distance_threshold)
         self.spin_curl_ratio.setValue(cfg.finger_curl_max_ratio)
 
+        self.chk_clahe.setChecked(cfg.preprocess_clahe_enabled)
+        self.spin_clahe_clip.setValue(cfg.preprocess_clahe_clip_limit)
+        self.spin_clahe_tile.setValue(cfg.preprocess_clahe_tile_size)
+        self.chk_gamma.setChecked(cfg.preprocess_gamma_enabled)
+        self.spin_gamma.setValue(cfg.preprocess_gamma_value)
+        self.chk_auto.setChecked(cfg.preprocess_auto_enabled)
+        self.spin_auto_target.setValue(cfg.preprocess_auto_target)
+        self.spin_auto_low.setValue(cfg.preprocess_auto_low)
+        self.spin_auto_high.setValue(cfg.preprocess_auto_high)
+        self.spin_auto_smooth.setValue(cfg.preprocess_auto_smoothing)
+
         self.chk_keypresses.setChecked(cfg.enable_actual_keypresses)
         self.chk_debug.setChecked(cfg.enable_debug_output)
         self.key_forward.set_key(cfg.key_forward)
@@ -546,6 +607,16 @@ class MainWindow(QMainWindow):
             hand_proximity_threshold=self.spin_proximity.value(),
             pinch_distance_threshold=self.spin_pinch_dist.value(),
             finger_curl_max_ratio=self.spin_curl_ratio.value(),
+            preprocess_clahe_enabled=self.chk_clahe.isChecked(),
+            preprocess_clahe_clip_limit=self.spin_clahe_clip.value(),
+            preprocess_clahe_tile_size=self.spin_clahe_tile.value(),
+            preprocess_gamma_enabled=self.chk_gamma.isChecked(),
+            preprocess_gamma_value=self.spin_gamma.value(),
+            preprocess_auto_enabled=self.chk_auto.isChecked(),
+            preprocess_auto_target=self.spin_auto_target.value(),
+            preprocess_auto_low=self.spin_auto_low.value(),
+            preprocess_auto_high=self.spin_auto_high.value(),
+            preprocess_auto_smoothing=self.spin_auto_smooth.value(),
             enable_actual_keypresses=self.chk_keypresses.isChecked(),
             enable_debug_output=self.chk_debug.isChecked(),
             key_forward=self.key_forward.get_key(),
