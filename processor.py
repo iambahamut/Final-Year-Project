@@ -1,8 +1,10 @@
+import math
 import os
 import time
 import threading
 
 import cv2
+import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -115,6 +117,12 @@ class GestureProcessor:
 
         # Timestamp tracking for process_frame
         self._last_timestamp_ms = 0
+
+        # Preprocessing state
+        self._gamma_lut_cache = {}      # {gamma_rounded: np.ndarray LUT}
+        self._ema_brightness = None     # smoothed mean luminance (EMA)
+        self._clahe = None              # lazy-initialised cv2.CLAHE instance
+        self._clahe_params = None       # (clip, tile) tuple used for current instance
 
     @property
     def key_mapping(self):
@@ -259,6 +267,19 @@ class GestureProcessor:
 
         return fingers_extended >= self.cfg.palm_min_fingers
 
+    def _get_gamma_lut(self, gamma: float):
+        """Return a cached 256-entry LUT for the given gamma. Keys rounded to 2dp."""
+        key = round(max(0.1, gamma), 2)
+        lut = self._gamma_lut_cache.get(key)
+        if lut is None:
+            inv = 1.0 / key
+            lut = np.array(
+                [((i / 255.0) ** inv) * 255 for i in range(256)],
+                dtype=np.uint8,
+            )
+            self._gamma_lut_cache[key] = lut
+        return lut
+
     @staticmethod
     def _landmark_distance(hand_landmarks, idx_a, idx_b):
         """3D Euclidean distance between two landmarks."""
@@ -297,10 +318,10 @@ class GestureProcessor:
         return curled_count >= 4
 
     @staticmethod
-    def _thumb_straightness(hand_landmarks):
-        """Ratio of direct CMC-to-TIP distance vs sum of thumb bone segments.
-        1.0 = perfectly straight, ~0.3 = curled. Camera-distance agnostic."""
-        chain = [1, 2, 3, 4]  # CMC -> MCP -> IP -> TIP
+    def _finger_straightness(hand_landmarks, chain):
+        """Ratio of direct base-to-tip distance vs sum of bone segments.
+        1.0 = perfectly straight, ~0.3 = fully curled. Direction-agnostic and
+        camera-distance agnostic."""
         total_seg = 0.0
         for i in range(len(chain) - 1):
             a, b = hand_landmarks[chain[i]], hand_landmarks[chain[i + 1]]
@@ -314,22 +335,33 @@ class GestureProcessor:
     def _thumb_truly_extended(self, hand_landmarks):
         """Stricter thumb extension check that resists fist false positives."""
         thumb_tip = hand_landmarks[4]
-        thumb_mcp = hand_landmarks[2]
+        wrist = hand_landmarks[0]
+        middle_mcp = hand_landmarks[9]  # palm center reference
 
-        # Check 1: Thumb must be physically straight (not curled around fist).
-        # This is camera-distance agnostic — a curled thumb has low straightness
-        # regardless of how close the hand is.
-        if self._thumb_straightness(hand_landmarks) < 0.7:
+        # Check 1: Thumb must be physically straight (not folded in a fist).
+        # Tighter threshold — a fist-wrapped thumb still scores ~0.7-0.8.
+        if self._finger_straightness(hand_landmarks, [1, 2, 3, 4]) < 0.85:
             return False
 
-        # Check 2: Thumb tip must be meaningfully above MCP (y decreases upward)
-        if thumb_tip.y >= thumb_mcp.y - self.cfg.thumbs_up_y_margin:
+        # Hand size reference — wrist to middle MCP — used to normalise the
+        # remaining geometric checks so they work at any camera distance.
+        dx, dy, dz = (wrist.x - middle_mcp.x), (wrist.y - middle_mcp.y), (wrist.z - middle_mcp.z)
+        hand_size = (dx*dx + dy*dy + dz*dz) ** 0.5
+        if hand_size < 1e-7:
             return False
 
-        # Check 3: Thumb tip must be away from index MCP (not wrapped around fist)
-        index_mcp = hand_landmarks[5]
-        thumb_to_index_mcp = ((thumb_tip.x - index_mcp.x)**2 + (thumb_tip.y - index_mcp.y)**2 + (thumb_tip.z - index_mcp.z)**2) ** 0.5
-        if thumb_to_index_mcp < self.cfg.thumbs_up_min_thumb_openness:
+        # Check 2: Thumb tip must be significantly ABOVE the palm centre
+        # (middle MCP), scaled to hand size. In a fist the thumb wraps across
+        # the palm so thumb_tip.y ≈ middle_mcp.y, failing this check.
+        vertical_above = middle_mcp.y - thumb_tip.y   # positive = above
+        if vertical_above < 0.5 * hand_size:
+            return False
+
+        # Check 3: Thumb tip must be the HIGHEST point on the hand (above
+        # every other fingertip). Curled fingertips in a fist sit near palm
+        # height, so this catches any leftover fist false positives.
+        min_finger_tip_y = min(hand_landmarks[i].y for i in (8, 12, 16, 20))
+        if thumb_tip.y >= min_finger_tip_y:
             return False
 
         return True
@@ -360,10 +392,15 @@ class GestureProcessor:
         )
 
     def is_point(self, hand_landmarks):
-        """Index extended, middle/ring/pinky curled, thumb must not be extended."""
-        if not self._finger_extended(hand_landmarks, 8, 5):
-            return False
-        if self._finger_extended(hand_landmarks, 4, 2):
+        """Index extended, middle/ring/pinky curled. Thumb state ignored.
+
+        Index extension uses bone-chain straightness, which is direction-
+        agnostic — pointing up/down/sideways/toward-the-camera all work.
+        The thumb is deliberately not checked because many people point
+        with the thumb extended (gun shape) or tucked alongside — neither
+        should block the gesture. Thumbs-up is rejected upstream by
+        classify_right_hand_gesture's priority order."""
+        if self._finger_straightness(hand_landmarks, [5, 6, 7, 8]) < 0.80:
             return False
         return (
             self._finger_curled(hand_landmarks, 12, 9)
@@ -899,6 +936,65 @@ class GestureProcessor:
     # Frame pipeline
     # ------------------------------------------------------------------
 
+    def _preprocess_frame(self, frame):
+        """Optional lighting normalisation. No-op when all toggles are off.
+
+        Order of operations:
+          1. Measure mean luminance (grayscale mean, EMA-smoothed).
+          2. Auto mode (meta-controller): decides whether to brighten/darken
+             and computes an adaptive gamma targeting cfg.preprocess_auto_target.
+             When the frame is in the "normal" band, auto skips preprocessing.
+          3. CLAHE on L channel of LAB (if enabled or auto requested).
+          4. Gamma LUT (if enabled or auto requested).
+        """
+        cfg = self.cfg
+        clahe_on = cfg.preprocess_clahe_enabled
+        gamma_on = cfg.preprocess_gamma_enabled
+        gamma_val = cfg.preprocess_gamma_value
+
+        if not (clahe_on or gamma_on or cfg.preprocess_auto_enabled):
+            return frame  # fast path: nothing to do
+
+        gray_mean = float(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).mean())
+        if self._ema_brightness is None:
+            self._ema_brightness = gray_mean
+        else:
+            a = cfg.preprocess_auto_smoothing
+            self._ema_brightness = a * gray_mean + (1.0 - a) * self._ema_brightness
+        mean_v = self._ema_brightness
+
+        if cfg.preprocess_auto_enabled:
+            if mean_v < cfg.preprocess_auto_low:
+                clahe_on = True
+                gamma_on = True
+                mv = max(1.0, mean_v)
+                tv = max(1.0, float(cfg.preprocess_auto_target))
+                gamma_val = math.log(mv / 255.0) / math.log(tv / 255.0)
+                gamma_val = max(0.3, min(3.0, gamma_val))
+            elif mean_v > cfg.preprocess_auto_high:
+                gamma_on = True
+                mv = min(254.0, mean_v)
+                tv = max(1.0, float(cfg.preprocess_auto_target))
+                gamma_val = math.log(mv / 255.0) / math.log(tv / 255.0)
+                gamma_val = max(0.3, min(3.0, gamma_val))
+
+        if clahe_on:
+            clip = cfg.preprocess_clahe_clip_limit
+            tile = max(1, cfg.preprocess_clahe_tile_size)
+            params = (clip, tile)
+            if self._clahe is None or self._clahe_params != params:
+                self._clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(tile, tile))
+                self._clahe_params = params
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            l, a_ch, b_ch = cv2.split(lab)
+            l = self._clahe.apply(l)
+            frame = cv2.cvtColor(cv2.merge([l, a_ch, b_ch]), cv2.COLOR_LAB2BGR)
+
+        if gamma_on and abs(gamma_val - 1.0) > 1e-3:
+            frame = cv2.LUT(frame, self._get_gamma_lut(gamma_val))
+
+        return frame
+
     def process_frame(self, frame):
         """Full processing pipeline for a single frame.
 
@@ -915,6 +1011,7 @@ class GestureProcessor:
         it eliminates the skip entirely.
         """
         frame = cv2.flip(frame, 1)
+        frame = self._preprocess_frame(frame)
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image  = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
