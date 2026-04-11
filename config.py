@@ -53,6 +53,20 @@ class GestureConfig:
     gesture_confirm_frames: int = 3
     gesture_release_frames: int = 5
 
+    # Frame preprocessing
+    preprocess_clahe_enabled: bool = False
+    preprocess_clahe_clip_limit: float = 2.0
+    preprocess_clahe_tile_size: int = 8
+
+    preprocess_gamma_enabled: bool = False
+    preprocess_gamma_value: float = 1.0  # 1.0 = no change; <1 brightens, >1 darkens
+
+    preprocess_auto_enabled: bool = False
+    preprocess_auto_target: int = 120       # target mean luminance (0-255)
+    preprocess_auto_low: int = 80           # below this, brighten path
+    preprocess_auto_high: int = 180         # above this, darken path
+    preprocess_auto_smoothing: float = 0.2  # EMA factor for measured brightness
+
     # PiP
     pip_scale: float = 0.4
 
