@@ -4,13 +4,221 @@ import time
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QSpinBox, QDoubleSpinBox, QSlider, QCheckBox, QPushButton,
-    QLabel, QColorDialog, QGroupBox,
+    QLabel, QColorDialog, QGroupBox, QScrollArea,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QKeyEvent
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import (
+    QColor, QKeyEvent, QIcon, QPixmap, QPainter,
+    QShortcut, QKeySequence,
+)
 
 from config import GestureConfig
 from pip_overlay import CameraWorker, PipOverlay
+
+# ---------------------------------------------------------------------------
+# Dark theme
+# ---------------------------------------------------------------------------
+
+DARK_STYLESHEET = """
+QMainWindow, QWidget {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    font-family: "Segoe UI", sans-serif;
+}
+
+QTabWidget::pane {
+    border: 1px solid #3f3f46;
+    background: #1e1e1e;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background: #252526;
+    color: #858585;
+    padding: 12px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+
+QTabBar::tab:selected {
+    color: #d4d4d4;
+    border-bottom: 2px solid #0e9f8e;
+    background: #1e1e1e;
+}
+
+QTabBar::tab:hover:!selected {
+    color: #d4d4d4;
+    background: #2d2d30;
+}
+
+QGroupBox {
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 16px;
+    font-weight: normal;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 4px;
+    color: #858585;
+}
+
+QPushButton {
+    background: #2d2d30;
+    color: #d4d4d4;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    padding: 6px 12px;
+}
+
+QPushButton:hover {
+    background: #3f3f46;
+}
+
+QPushButton:pressed {
+    background: #1e1e1e;
+}
+
+QSpinBox, QDoubleSpinBox {
+    background: #252526;
+    color: #d4d4d4;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    padding: 4px;
+    min-height: 20px;
+}
+
+QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 1px solid #0e9f8e;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: #2d2d30;
+    border: none;
+    width: 16px;
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #d4d4d4;
+    width: 0;
+    height: 0;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #d4d4d4;
+    width: 0;
+    height: 0;
+}
+
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #3f3f46;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    width: 10px;
+    height: 10px;
+    margin: -3px 0;
+    background: #0e9f8e;
+    border-radius: 5px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #0e9f8e;
+    border-radius: 2px;
+    height: 4px;
+}
+
+QCheckBox {
+    color: #d4d4d4;
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #3f3f46;
+    border-radius: 3px;
+    background: #252526;
+}
+
+QCheckBox::indicator:checked {
+    background: #0e9f8e;
+    border-color: #0e9f8e;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #0e9f8e;
+}
+
+QScrollArea {
+    border: none;
+    background: transparent;
+}
+
+QScrollArea > QWidget > QWidget {
+    background: transparent;
+}
+
+QScrollBar:vertical {
+    background: #1e1e1e;
+    width: 8px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background: #3f3f46;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+QToolTip {
+    background: #252526;
+    color: #d4d4d4;
+    border: 1px solid #3f3f46;
+    padding: 6px 8px;
+    font-size: 8pt;
+}
+
+QLabel {
+    background: transparent;
+}
+"""
+
+_BTN_PRIMARY = (
+    "background: #0e9f8e; color: white; font-weight: bold;"
+    "border: 1px solid #0c8070; border-radius: 4px; padding: 6px 12px;"
+)
+_BTN_DANGER = (
+    "background: #c0392b; color: white; font-weight: bold;"
+    "border: 1px solid #a93226; border-radius: 4px; padding: 6px 12px;"
+)
+_COLLAPSIBLE_STYLE = (
+    "QPushButton { text-align: left; background: #252526;"
+    "border: 1px solid #3f3f46; border-radius: 6px;"
+    "padding: 8px 12px; color: #858585; }"
+    "QPushButton:hover { background: #2d2d30; color: #d4d4d4; }"
+    "QPushButton:checked { color: #d4d4d4; border-color: #0e9f8e; }"
+)
 
 # ---------------------------------------------------------------------------
 # Custom widgets
@@ -44,25 +252,71 @@ _SPECIAL_KEY_NAMES = {
 
 
 def _stacked_label(name: str, hint: str = "") -> QWidget:
-    """Label widget: name in normal font, hint below in smaller muted text."""
+    """Label with name on the left and a hoverable info icon on the right."""
     container = QWidget()
-    layout = QVBoxLayout(container)
-    layout.setContentsMargins(0, 2, 0, 2)
-    layout.setSpacing(1)
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(0, 0, 4, 0)
+    layout.setSpacing(4)
 
     name_lbl = QLabel(name)
+    if hint:
+        name_lbl.setToolTip(hint)
     layout.addWidget(name_lbl)
 
     if hint:
-        hint_lbl = QLabel(hint)
-        hint_lbl.setWordWrap(True)
-        f = hint_lbl.font()
-        f.setPointSize(max(7, f.pointSize() - 2))
-        hint_lbl.setFont(f)
-        hint_lbl.setStyleSheet("color: #888888;")
-        layout.addWidget(hint_lbl)
+        icon_lbl = QLabel("\u24d8")
+        icon_lbl.setStyleSheet("color: #555555; font-size: 10px;")
+        icon_lbl.setToolTip(hint)
+        icon_lbl.setCursor(Qt.CursorShape.WhatsThisCursor)
+        icon_lbl.setProperty("is_hint", True)
+        layout.addWidget(icon_lbl)
 
+    layout.addStretch()
     return container
+
+
+class CollapsibleSection(QWidget):
+    """Clickable header that expands/collapses a content area."""
+
+    def __init__(self, title: str, collapsed: bool = True, parent=None):
+        super().__init__(parent)
+        self._title = title
+
+        self._toggle = QPushButton()
+        self._toggle.setCheckable(True)
+        self._toggle.setChecked(not collapsed)
+        self._toggle.setStyleSheet(_COLLAPSIBLE_STYLE)
+        self._toggle.toggled.connect(self._on_toggle)
+
+        self._content = QWidget()
+        self._content.setVisible(not collapsed)
+
+        self._update_arrow(not collapsed)
+
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 4, 0, 4)
+        main.setSpacing(0)
+        main.addWidget(self._toggle)
+        main.addWidget(self._content)
+
+    def _update_arrow(self, expanded: bool):
+        arrow = "\u25bc" if expanded else "\u25b6"
+        self._toggle.setText(f"{arrow}  {self._title}")
+
+    def _on_toggle(self, checked: bool):
+        self._content.setVisible(checked)
+        self._update_arrow(checked)
+
+    def content_widget(self) -> QWidget:
+        return self._content
+
+    def form_layout(self) -> QFormLayout:
+        """Get or create a QFormLayout on the content area."""
+        if self._content.layout() is None:
+            form = QFormLayout(self._content)
+            form.setVerticalSpacing(8)
+            form.setContentsMargins(8, 8, 8, 8)
+        return self._content.layout()
 
 
 class KeyCaptureButton(QPushButton):
@@ -74,6 +328,7 @@ class KeyCaptureButton(QPushButton):
         self._listening = False
         self._listen_start_time = 0.0
         self.setMinimumWidth(80)
+        self.setToolTip("Click, then press a key or click a mouse button")
         self.clicked.connect(self._start_listening)
 
     @staticmethod
@@ -83,7 +338,11 @@ class KeyCaptureButton(QPushButton):
     def _start_listening(self):
         self._listening = True
         self._listen_start_time = time.time()
-        self.setText("...")
+        self.setText("Press a key\u2026")
+        self.setStyleSheet(
+            "background-color: #0e9f8e; color: white;"
+            "border: 1px solid #0e9f8e; border-radius: 4px; padding: 6px 12px;"
+        )
         self.grabKeyboard()
 
     def mousePressEvent(self, event):
@@ -123,6 +382,7 @@ class KeyCaptureButton(QPushButton):
         self._listening = False
         self.releaseKeyboard()
         self.setText(self._display_text(self._key))
+        self.setStyleSheet("")
 
     def get_key(self) -> str:
         return self._key
@@ -138,15 +398,19 @@ class ColorPickerButton(QPushButton):
     def __init__(self, bgr: list, parent=None):
         super().__init__(parent)
         self._bgr = list(bgr)
-        self.setFixedSize(60, 30)
+        self.setFixedSize(80, 30)
         self._update_swatch()
         self.clicked.connect(self._pick_color)
 
     def _update_swatch(self):
         b, g, r = self._bgr
+        hex_color = f"#{r:02x}{g:02x}{b:02x}".upper()
         self.setStyleSheet(
-            f"background-color: rgb({r},{g},{b}); border: 1px solid #888;"
+            f"QPushButton {{ background-color: rgb({r},{g},{b});"
+            f"  border: 1px solid #888; border-radius: 4px; }}"
+            f"QPushButton:hover {{ border: 1px solid #0e9f8e; }}"
         )
+        self.setToolTip(hex_color)
 
     def _pick_color(self):
         b, g, r = self._bgr
@@ -165,7 +429,7 @@ class ColorPickerButton(QPushButton):
 
 
 # ---------------------------------------------------------------------------
-# Helper: confidence slider row (label stacked above slider)
+# Helper: confidence slider row
 # ---------------------------------------------------------------------------
 
 def _make_confidence_row(name: str, hint: str, value: float):
@@ -176,9 +440,12 @@ def _make_confidence_row(name: str, hint: str, value: float):
     slider = QSlider(Qt.Orientation.Horizontal)
     slider.setRange(0, 100)
     slider.setValue(int(value * 100))
-    val_label = QLabel(f"{value:.2f}")
-    val_label.setFixedWidth(40)
-    slider.valueChanged.connect(lambda v: val_label.setText(f"{v / 100:.2f}"))
+    slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+    slider.setTickInterval(10)
+    val_label = QLabel(f"{int(value * 100)}%")
+    val_label.setFixedWidth(45)
+    val_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    slider.valueChanged.connect(lambda v: val_label.setText(f"{v}%"))
     row.addWidget(lbl)
     row.addWidget(slider)
     row.addWidget(val_label)
@@ -192,8 +459,10 @@ def _make_confidence_row(name: str, hint: str, value: float):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Settings")
-        self.setFixedWidth(520)
+        self.setWindowTitle("Gesture Recognition \u2014 Settings")
+        self.setMinimumWidth(520)
+        self.setMaximumWidth(680)
+        self._set_window_icon()
         self.worker = None
         self.pip_overlay = None
 
@@ -201,59 +470,121 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         root_layout = QVBoxLayout(central)
 
+        # Save button row
+        save_row = QHBoxLayout()
+        self.chk_show_hints = QCheckBox("Show hints")
+        self.chk_show_hints.setChecked(True)
+        self.chk_show_hints.setStyleSheet("color: #858585; font-size: 8pt;")
+        self.chk_show_hints.toggled.connect(self._toggle_hints)
+        save_row.addWidget(self.chk_show_hints)
+        save_row.addStretch()
+        self.btn_save = QPushButton("\U0001f4be")
+        self.btn_save.setFixedSize(32, 32)
+        self.btn_save.setToolTip("Save settings (Ctrl+S)")
+        self.btn_save.clicked.connect(self._save_settings)
+        save_row.addWidget(self.btn_save)
+        root_layout.addLayout(save_row)
+
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut.activated.connect(self._save_settings)
+
+        # Tabs
         self.tabs = QTabWidget()
         root_layout.addWidget(self.tabs)
 
-        self._build_camera_tab()
-        self._build_gesture_tab()
-        self._build_preprocess_tab()
-        self._build_keys_tab()
+        self._build_detection_tab()
+        self._build_gestures_tab()
+        self._build_bindings_tab()
         self._build_display_tab()
-        self._build_colors_tab()
 
+        # Bottom bar
         bottom = QHBoxLayout()
-        self.btn_defaults = QPushButton("Restore Defaults")
+        self.btn_defaults = QPushButton("\U0001f504 Restore Defaults")
         self.btn_defaults.clicked.connect(self._restore_defaults)
-        self.btn_save = QPushButton("Save Settings")
-        self.btn_save.clicked.connect(self._save_settings)
-        self.status_label = QLabel("Ready")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.btn_start = QPushButton("Start")
-        self.btn_start.setFixedWidth(100)
-        self.btn_start.clicked.connect(self._toggle_start_stop)
         bottom.addWidget(self.btn_defaults)
-        bottom.addWidget(self.btn_save)
         bottom.addStretch()
-        bottom.addWidget(self.status_label)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(6)
+        self.status_dot = QLabel("\u25cf")
+        self.status_dot.setStyleSheet("color: #858585; font-size: 14px;")
+        self.status_label = QLabel("Ready")
+        status_row.addWidget(self.status_dot)
+        status_row.addWidget(self.status_label)
+        bottom.addLayout(status_row)
+
         bottom.addStretch()
+
+        self.btn_start = QPushButton("\u25b6 Start")
+        self.btn_start.setFixedWidth(110)
+        self.btn_start.setStyleSheet(_BTN_PRIMARY)
+        self.btn_start.clicked.connect(self._toggle_start_stop)
         bottom.addWidget(self.btn_start)
         root_layout.addLayout(bottom)
 
+        # Pulse timer
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.setInterval(800)
+        self._pulse_timer.timeout.connect(self._pulse_dot)
+        self._dot_visible = True
+
+        # Load config
         try:
             self._populate(GestureConfig.from_json("config.json"))
         except Exception:
             self._populate(GestureConfig())
 
+    def _set_window_icon(self):
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor("#0e9f8e"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(2, 2, 28, 28)
+        painter.end()
+        self.setWindowIcon(QIcon(pixmap))
+
     # ------------------------------------------------------------------
-    # Tab builders
+    # Scrollable tab helper
     # ------------------------------------------------------------------
 
-    def _build_camera_tab(self):
+    def _make_scrollable_tab(self, tab_name: str) -> QVBoxLayout:
         tab = QWidget()
-        layout = QFormLayout(tab)
-        layout.setVerticalSpacing(8)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
+        scroll.setWidget(inner)
+        outer = QVBoxLayout(tab)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+        self.tabs.addTab(tab, tab_name)
+        return layout
+
+    # ------------------------------------------------------------------
+    # Tab 1: Detection
+    # ------------------------------------------------------------------
+
+    def _build_detection_tab(self):
+        layout = self._make_scrollable_tab("\U0001f3a5 Detection")
+
+        # -- Camera Input (always visible) --
+        cam_group = QGroupBox("\U0001f4f7 Camera Input")
+        cam_form = QFormLayout(cam_group)
+        cam_form.setVerticalSpacing(8)
 
         self.spin_camera_index = QSpinBox()
         self.spin_camera_index.setRange(0, 10)
-        layout.addRow(
-            _stacked_label("Camera Index", "0 = built-in webcam\n1+ = external camera"),
+        cam_form.addRow(
+            _stacked_label("Camera Index", "0 = built-in webcam, 1+ = external camera"),
             self.spin_camera_index,
         )
 
         self.spin_width = QSpinBox()
         self.spin_width.setRange(320, 3840)
         self.spin_width.setSingleStep(160)
-        layout.addRow(
+        cam_form.addRow(
             _stacked_label("Resolution Width", "higher = sharper image, uses more CPU"),
             self.spin_width,
         )
@@ -261,52 +592,142 @@ class MainWindow(QMainWindow):
         self.spin_height = QSpinBox()
         self.spin_height.setRange(240, 2160)
         self.spin_height.setSingleStep(120)
-        layout.addRow(
+        cam_form.addRow(
             _stacked_label("Resolution Height", "higher = sharper image, uses more CPU"),
             self.spin_height,
         )
+
+        layout.addWidget(cam_group)
+
+        # -- MediaPipe Confidence (collapsed) --
+        self._sec_confidence = CollapsibleSection("\U0001f9e0 MediaPipe Confidence")
+        conf_inner = self._sec_confidence.content_widget()
+        conf_layout = QVBoxLayout(conf_inner)
+        conf_layout.setContentsMargins(8, 8, 8, 8)
 
         row1, self.slider_detection, _ = _make_confidence_row(
             "Detection Confidence",
             "lower = finds hands more easily\nhigher = fewer false positives",
             0.7,
         )
-        layout.addRow(row1)
+        conf_layout.addLayout(row1)
 
         row2, self.slider_presence, _ = _make_confidence_row(
             "Presence Confidence",
             "lower = hand stays tracked longer\nhigher = drops out faster",
             0.5,
         )
-        layout.addRow(row2)
+        conf_layout.addLayout(row2)
 
         row3, self.slider_tracking, _ = _make_confidence_row(
             "Tracking Confidence",
             "lower = re-detects hand more often\nhigher = trusts existing track",
             0.5,
         )
-        layout.addRow(row3)
+        conf_layout.addLayout(row3)
 
-        self.tabs.addTab(tab, "Camera && Detection")
+        layout.addWidget(self._sec_confidence)
 
-    def _build_gesture_tab(self):
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        layout.setVerticalSpacing(8)
+        # -- Frame Preprocessing (collapsed) --
+        self._sec_preprocess = CollapsibleSection("\U0001f317 Frame Preprocessing")
+        pp_form = self._sec_preprocess.form_layout()
+
+        self.chk_clahe = QCheckBox("Enable CLAHE")
+        pp_form.addRow(self.chk_clahe)
+
+        self.spin_clahe_clip = QDoubleSpinBox()
+        self.spin_clahe_clip.setRange(0.5, 10.0)
+        self.spin_clahe_clip.setSingleStep(0.5)
+        self.spin_clahe_clip.setDecimals(1)
+        pp_form.addRow(
+            _stacked_label("CLAHE Clip Limit", "higher = stronger local contrast"),
+            self.spin_clahe_clip,
+        )
+
+        self.spin_clahe_tile = QSpinBox()
+        self.spin_clahe_tile.setRange(2, 16)
+        pp_form.addRow(
+            _stacked_label("CLAHE Tile Size", "NxN grid for adaptive processing"),
+            self.spin_clahe_tile,
+        )
+
+        self.chk_gamma = QCheckBox("Enable Gamma Correction")
+        pp_form.addRow(self.chk_gamma)
+
+        self.spin_gamma = QDoubleSpinBox()
+        self.spin_gamma.setRange(0.3, 3.0)
+        self.spin_gamma.setSingleStep(0.05)
+        self.spin_gamma.setDecimals(2)
+        pp_form.addRow(
+            _stacked_label("Gamma Value", "<1 brightens, >1 darkens\n1.0 = no change"),
+            self.spin_gamma,
+        )
+
+        self.chk_auto = QCheckBox("Enable Auto-Brightness (adaptive)")
+        pp_form.addRow(self.chk_auto)
+
+        self.spin_auto_target = QSpinBox()
+        self.spin_auto_target.setRange(40, 220)
+        pp_form.addRow(
+            _stacked_label("Auto Target Brightness", "target mean luminance (0-255)"),
+            self.spin_auto_target,
+        )
+
+        self.spin_auto_low = QSpinBox()
+        self.spin_auto_low.setRange(0, 200)
+        pp_form.addRow(
+            _stacked_label("Auto Dark Threshold", "below this, brighten +\ndenoise triggers"),
+            self.spin_auto_low,
+        )
+
+        self.spin_auto_high = QSpinBox()
+        self.spin_auto_high.setRange(50, 255)
+        pp_form.addRow(
+            _stacked_label("Auto Bright Threshold", "above this, darkening triggers"),
+            self.spin_auto_high,
+        )
+
+        self.spin_auto_smooth = QDoubleSpinBox()
+        self.spin_auto_smooth.setRange(0.05, 1.0)
+        self.spin_auto_smooth.setSingleStep(0.05)
+        self.spin_auto_smooth.setDecimals(2)
+        pp_form.addRow(
+            _stacked_label("Auto EMA Smoothing", "higher = more reactive to changes"),
+            self.spin_auto_smooth,
+        )
+
+        layout.addWidget(self._sec_preprocess)
+        layout.addStretch()
+
+    # ------------------------------------------------------------------
+    # Tab 2: Gestures  (all collapsible — advanced tuning)
+    # ------------------------------------------------------------------
+
+    def _build_gestures_tab(self):
+        layout = self._make_scrollable_tab("\U0001f3af Gestures")
+
+        hint = QLabel("Fine-tune gesture detection. Default values work well for most setups.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #858585; padding: 4px 0;")
+        layout.addWidget(hint)
+
+        # -- Left Hand — Movement (collapsed) --
+        self._sec_left_hand = CollapsibleSection("\U0001f590\ufe0f Left Hand \u2014 Movement")
+        lh_form = self._sec_left_hand.form_layout()
 
         self.spin_palm_ext = QDoubleSpinBox()
         self.spin_palm_ext.setRange(0.5, 2.0)
         self.spin_palm_ext.setSingleStep(0.05)
         self.spin_palm_ext.setDecimals(2)
-        layout.addRow(
-            _stacked_label("Palm Extension", "lower = any open hand triggers\nhigher = needs wide finger spread"),
+        lh_form.addRow(
+            _stacked_label("Palm Extension", "lower = any open hand triggers\nhigher = needs wide spread"),
             self.spin_palm_ext,
         )
 
         self.spin_palm_fingers = QSpinBox()
         self.spin_palm_fingers.setRange(1, 4)
-        layout.addRow(
-            _stacked_label("Min Fingers for Palm", "lower = fewer fingers needed to open palm\nhigher = stricter"),
+        lh_form.addRow(
+            _stacked_label("Min Fingers for Palm", "lower = fewer fingers to open palm\nhigher = stricter"),
             self.spin_palm_fingers,
         )
 
@@ -314,7 +735,7 @@ class MainWindow(QMainWindow):
         self.spin_move_activate.setRange(0.01, 0.50)
         self.spin_move_activate.setSingleStep(0.01)
         self.spin_move_activate.setDecimals(2)
-        layout.addRow(
+        lh_form.addRow(
             _stacked_label("Move Activate", "lower = keys fire with small movement\nhigher = needs bigger move"),
             self.spin_move_activate,
         )
@@ -323,8 +744,8 @@ class MainWindow(QMainWindow):
         self.spin_move_release.setRange(0.01, 0.50)
         self.spin_move_release.setSingleStep(0.01)
         self.spin_move_release.setDecimals(2)
-        layout.addRow(
-            _stacked_label("Move Release", "lower = keys drop as soon as hand returns\nhigher = keys hold longer"),
+        lh_form.addRow(
+            _stacked_label("Move Release", "lower = keys drop as hand returns\nhigher = keys hold longer"),
             self.spin_move_release,
         )
 
@@ -333,7 +754,7 @@ class MainWindow(QMainWindow):
         self.spin_grace.setSingleStep(0.5)
         self.spin_grace.setDecimals(1)
         self.spin_grace.setSuffix(" sec")
-        layout.addRow(
+        lh_form.addRow(
             _stacked_label("Hand Loss Grace Period", "lower = controls drop immediately\nhigher = tolerates brief occlusion"),
             self.spin_grace,
         )
@@ -342,17 +763,23 @@ class MainWindow(QMainWindow):
         self.spin_proximity.setRange(0.01, 1.0)
         self.spin_proximity.setSingleStep(0.01)
         self.spin_proximity.setDecimals(2)
-        layout.addRow(
-            _stacked_label("Hand Proximity", "lower = strict same-hand matching\nhigher = more tolerant of movement"),
+        lh_form.addRow(
+            _stacked_label("Hand Proximity", "lower = strict same-hand matching\nhigher = more tolerant"),
             self.spin_proximity,
         )
+
+        layout.addWidget(self._sec_left_hand)
+
+        # -- Right Hand — Gestures (collapsed) --
+        self._sec_right_hand = CollapsibleSection("\u270b Right Hand \u2014 Gestures")
+        rh_form = self._sec_right_hand.form_layout()
 
         self.spin_pinch_dist = QDoubleSpinBox()
         self.spin_pinch_dist.setRange(0.01, 0.20)
         self.spin_pinch_dist.setSingleStep(0.005)
         self.spin_pinch_dist.setDecimals(3)
-        layout.addRow(
-            _stacked_label("Pinch Distance", "lower = fingers must nearly touch\nhigher = loose pinch is enough"),
+        rh_form.addRow(
+            _stacked_label("Pinch Distance", "lower = fingers must nearly touch\nhigher = loose pinch"),
             self.spin_pinch_dist,
         )
 
@@ -360,72 +787,62 @@ class MainWindow(QMainWindow):
         self.spin_curl_ratio.setRange(0.5, 1.0)
         self.spin_curl_ratio.setSingleStep(0.05)
         self.spin_curl_ratio.setDecimals(2)
-        layout.addRow(
+        rh_form.addRow(
             _stacked_label("Finger Curl Ratio", "lower = finger must curl fully\nhigher = partial curl counts"),
             self.spin_curl_ratio,
         )
 
-        self.tabs.addTab(tab, "Gesture Thresholds")
+        layout.addWidget(self._sec_right_hand)
 
-    def _build_preprocess_tab(self):
-        tab = QWidget()
-        layout = QFormLayout(tab)
+        # -- Debounce Timing (collapsed) --
+        self._sec_debounce = CollapsibleSection("\u23f1\ufe0f Debounce Timing")
+        db_form = self._sec_debounce.form_layout()
 
-        self.chk_clahe = QCheckBox("Enable CLAHE")
-        layout.addRow(self.chk_clahe)
+        self.spin_confirm_frames = QSpinBox()
+        self.spin_confirm_frames.setRange(1, 10)
+        db_form.addRow(
+            _stacked_label("Confirm Frames", "frames to confirm new gesture"),
+            self.spin_confirm_frames,
+        )
 
-        self.spin_clahe_clip = QDoubleSpinBox()
-        self.spin_clahe_clip.setRange(0.5, 10.0)
-        self.spin_clahe_clip.setSingleStep(0.5)
-        self.spin_clahe_clip.setDecimals(1)
-        layout.addRow("CLAHE Clip Limit:", self.spin_clahe_clip)
+        self.spin_release_frames = QSpinBox()
+        self.spin_release_frames.setRange(1, 15)
+        db_form.addRow(
+            _stacked_label("Release Frames", "frames to confirm release"),
+            self.spin_release_frames,
+        )
 
-        self.spin_clahe_tile = QSpinBox()
-        self.spin_clahe_tile.setRange(2, 16)
-        layout.addRow("CLAHE Tile Size:", self.spin_clahe_tile)
+        self.chk_auto_denoise = QCheckBox("Auto Denoise")
+        db_form.addRow(
+            _stacked_label("", "bilateral filter on dim frames"),
+            self.chk_auto_denoise,
+        )
 
-        self.chk_gamma = QCheckBox("Enable Gamma Correction")
-        layout.addRow(self.chk_gamma)
+        layout.addWidget(self._sec_debounce)
+        layout.addStretch()
 
-        self.spin_gamma = QDoubleSpinBox()
-        self.spin_gamma.setRange(0.3, 3.0)
-        self.spin_gamma.setSingleStep(0.05)
-        self.spin_gamma.setDecimals(2)
-        layout.addRow("Gamma Value (1.0 = off):", self.spin_gamma)
+    # ------------------------------------------------------------------
+    # Tab 3: Bindings  (key mapping — always visible)
+    # ------------------------------------------------------------------
 
-        self.chk_auto = QCheckBox("Enable Auto-Brightness (adaptive)")
-        layout.addRow(self.chk_auto)
+    def _build_bindings_tab(self):
+        layout = self._make_scrollable_tab("\u2328\ufe0f Bindings")
 
-        self.spin_auto_target = QSpinBox()
-        self.spin_auto_target.setRange(40, 220)
-        layout.addRow("Auto Target Brightness:", self.spin_auto_target)
-
-        self.spin_auto_low = QSpinBox()
-        self.spin_auto_low.setRange(0, 200)
-        layout.addRow("Auto Dark Threshold:", self.spin_auto_low)
-
-        self.spin_auto_high = QSpinBox()
-        self.spin_auto_high.setRange(50, 255)
-        layout.addRow("Auto Bright Threshold:", self.spin_auto_high)
-
-        self.spin_auto_smooth = QDoubleSpinBox()
-        self.spin_auto_smooth.setRange(0.05, 1.0)
-        self.spin_auto_smooth.setSingleStep(0.05)
-        self.spin_auto_smooth.setDecimals(2)
-        layout.addRow("Auto EMA Smoothing:", self.spin_auto_smooth)
-
-        self.tabs.addTab(tab, "Preprocessing")
-
-    def _build_keys_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+        info = QLabel("Click a button then press any key or mouse button to remap it.")
+        info.setWordWrap(True)
+        info.setStyleSheet(
+            "background: #252526; border-left: 2px solid #0e9f8e;"
+            "padding: 6px 8px; color: #858585;"
+        )
+        layout.addWidget(info)
 
         self.chk_keypresses = QCheckBox("Enable Actual Keypresses")
         self.chk_debug = QCheckBox("Enable Debug Output")
         layout.addWidget(self.chk_keypresses)
         layout.addWidget(self.chk_debug)
 
-        group = QGroupBox("Key Mapping")
+        # WASD keys
+        group = QGroupBox("\u2328\ufe0f Key Mapping")
         form = QFormLayout(group)
 
         self.key_forward = KeyCaptureButton("w")
@@ -440,7 +857,8 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(group)
 
-        gesture_group = QGroupBox("Right-Hand Gesture Keys")
+        # Right-hand gesture keys
+        gesture_group = QGroupBox("\U0001f90f Right-Hand Gesture Keys")
         gesture_form = QFormLayout(gesture_group)
 
         self.chk_right_gestures = QCheckBox("Enable Right-Hand Gestures")
@@ -458,63 +876,75 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(gesture_group)
         layout.addStretch()
-        self.tabs.addTab(tab, "Keys && Controls")
+
+    # ------------------------------------------------------------------
+    # Tab 4: Display  (PiP + overlay basics visible, rest collapsed)
+    # ------------------------------------------------------------------
 
     def _build_display_tab(self):
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        layout.setVerticalSpacing(8)
+        layout = self._make_scrollable_tab("\U0001f5a5\ufe0f Display")
+
+        # -- PiP (always visible) --
+        pip_group = QGroupBox("\U0001f5bc\ufe0f Picture-in-Picture")
+        pip_form = QFormLayout(pip_group)
+        pip_form.setVerticalSpacing(8)
 
         self.spin_pip_scale = QDoubleSpinBox()
         self.spin_pip_scale.setRange(0.1, 1.0)
         self.spin_pip_scale.setSingleStep(0.05)
         self.spin_pip_scale.setDecimals(2)
-        layout.addRow(
+        pip_form.addRow(
             _stacked_label("PiP Window Size", "lower = smaller camera overlay\nhigher = larger"),
             self.spin_pip_scale,
         )
 
-        self.chk_wasd_overlay = QCheckBox("WASD Overlay Enabled")
-        layout.addRow(self.chk_wasd_overlay)
+        layout.addWidget(pip_group)
+
+        # -- WASD overlay toggle (always visible) --
+        self.chk_wasd_overlay = QCheckBox("\U0001f3ae WASD Overlay Enabled")
+        layout.addWidget(self.chk_wasd_overlay)
+
+        # -- WASD overlay layout (collapsed) --
+        self._sec_overlay = CollapsibleSection("\U0001f3ae WASD Overlay Layout")
+        ov_form = self._sec_overlay.form_layout()
 
         self.spin_key_size = QSpinBox()
         self.spin_key_size.setRange(20, 100)
         self.spin_key_size.setSingleStep(5)
-        layout.addRow(
-            _stacked_label("Key Size (px)", "lower = smaller key boxes\nhigher = bigger key boxes"),
+        ov_form.addRow(
+            _stacked_label("Key Size (px)", "lower = smaller key boxes, higher = bigger"),
             self.spin_key_size,
         )
 
         self.spin_key_spacing = QSpinBox()
         self.spin_key_spacing.setRange(0, 30)
         self.spin_key_spacing.setSingleStep(2)
-        layout.addRow(
-            _stacked_label("Key Spacing (px)", "lower = keys closer together\nhigher = more spread apart"),
+        ov_form.addRow(
+            _stacked_label("Key Spacing (px)", "lower = keys closer\nhigher = more spread apart"),
             self.spin_key_spacing,
         )
 
         self.spin_overlay_x = QSpinBox()
         self.spin_overlay_x.setRange(0, 500)
         self.spin_overlay_x.setSingleStep(10)
-        layout.addRow(
-            _stacked_label("Overlay X Position (px)", "horizontal offset from the left edge of the frame"),
+        ov_form.addRow(
+            _stacked_label("Overlay X Position (px)", "horizontal offset from left edge"),
             self.spin_overlay_x,
         )
 
         self.spin_overlay_y = QSpinBox()
         self.spin_overlay_y.setRange(50, 500)
         self.spin_overlay_y.setSingleStep(10)
-        layout.addRow(
-            _stacked_label("Overlay Y Offset (px)", "vertical offset upward from the bottom edge of the frame"),
+        ov_form.addRow(
+            _stacked_label("Overlay Y Offset (px)", "vertical offset from bottom edge"),
             self.spin_overlay_y,
         )
 
-        self.tabs.addTab(tab, "Display && Overlay")
+        layout.addWidget(self._sec_overlay)
 
-    def _build_colors_tab(self):
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        layout.setVerticalSpacing(8)
+        # -- Colors (collapsed) --
+        self._sec_colors = CollapsibleSection("\U0001f3a8 Colors")
+        color_form = self._sec_colors.form_layout()
 
         self.color_left_hand = ColorPickerButton([255, 0, 0])
         self.color_right_hand = ColorPickerButton([0, 0, 255])
@@ -523,35 +953,28 @@ class MainWindow(QMainWindow):
         self.color_text_inactive = ColorPickerButton([180, 180, 180])
         self.color_text_active = ColorPickerButton([0, 0, 0])
 
-        layout.addRow("Left Hand Color:", self.color_left_hand)
-        layout.addRow("Right Hand Color:", self.color_right_hand)
-        layout.addRow("Key Inactive Color:", self.color_key_inactive)
-        layout.addRow("Key Active Color:", self.color_key_active)
-        layout.addRow("Text Inactive Color:", self.color_text_inactive)
-        layout.addRow("Text Active Color:", self.color_text_active)
+        color_form.addRow("Left Hand Color:", self.color_left_hand)
+        color_form.addRow("Right Hand Color:", self.color_right_hand)
+        color_form.addRow("Key Inactive Color:", self.color_key_inactive)
+        color_form.addRow("Key Active Color:", self.color_key_active)
+        color_form.addRow("Text Inactive Color:", self.color_text_inactive)
+        color_form.addRow("Text Active Color:", self.color_text_active)
 
-        self.tabs.addTab(tab, "Colors")
+        layout.addWidget(self._sec_colors)
+        layout.addStretch()
 
     # ------------------------------------------------------------------
     # Config <-> widgets
     # ------------------------------------------------------------------
 
     def _populate(self, cfg: GestureConfig):
+        # Detection
         self.spin_camera_index.setValue(cfg.camera_index)
         self.spin_width.setValue(cfg.desired_width)
         self.spin_height.setValue(cfg.desired_height)
         self.slider_detection.setValue(int(cfg.min_hand_detection_confidence * 100))
         self.slider_presence.setValue(int(cfg.min_hand_presence_confidence * 100))
         self.slider_tracking.setValue(int(cfg.min_tracking_confidence * 100))
-
-        self.spin_palm_ext.setValue(cfg.palm_extension_threshold)
-        self.spin_palm_fingers.setValue(cfg.palm_min_fingers)
-        self.spin_move_activate.setValue(cfg.movement_threshold_activate)
-        self.spin_move_release.setValue(cfg.movement_threshold_release)
-        self.spin_grace.setValue(cfg.hand_loss_grace_period)
-        self.spin_proximity.setValue(cfg.hand_proximity_threshold)
-        self.spin_pinch_dist.setValue(cfg.pinch_distance_threshold)
-        self.spin_curl_ratio.setValue(cfg.finger_curl_max_ratio)
 
         self.chk_clahe.setChecked(cfg.preprocess_clahe_enabled)
         self.spin_clahe_clip.setValue(cfg.preprocess_clahe_clip_limit)
@@ -564,6 +987,20 @@ class MainWindow(QMainWindow):
         self.spin_auto_high.setValue(cfg.preprocess_auto_high)
         self.spin_auto_smooth.setValue(cfg.preprocess_auto_smoothing)
 
+        # Gestures
+        self.spin_palm_ext.setValue(cfg.palm_extension_threshold)
+        self.spin_palm_fingers.setValue(cfg.palm_min_fingers)
+        self.spin_move_activate.setValue(cfg.movement_threshold_activate)
+        self.spin_move_release.setValue(cfg.movement_threshold_release)
+        self.spin_grace.setValue(cfg.hand_loss_grace_period)
+        self.spin_proximity.setValue(cfg.hand_proximity_threshold)
+        self.spin_pinch_dist.setValue(cfg.pinch_distance_threshold)
+        self.spin_curl_ratio.setValue(cfg.finger_curl_max_ratio)
+        self.spin_confirm_frames.setValue(cfg.gesture_confirm_frames)
+        self.spin_release_frames.setValue(cfg.gesture_release_frames)
+        self.chk_auto_denoise.setChecked(cfg.preprocess_auto_denoise)
+
+        # Bindings
         self.chk_keypresses.setChecked(cfg.enable_actual_keypresses)
         self.chk_debug.setChecked(cfg.enable_debug_output)
         self.key_forward.set_key(cfg.key_forward)
@@ -577,6 +1014,7 @@ class MainWindow(QMainWindow):
         self.key_palm.set_key(cfg.gesture_palm_key)
         self.key_point.set_key(cfg.gesture_point_key)
 
+        # Display
         self.spin_pip_scale.setValue(cfg.pip_scale)
         self.chk_wasd_overlay.setChecked(cfg.wasd_overlay_enabled)
         self.spin_key_size.setValue(cfg.wasd_key_size)
@@ -617,6 +1055,9 @@ class MainWindow(QMainWindow):
             preprocess_auto_low=self.spin_auto_low.value(),
             preprocess_auto_high=self.spin_auto_high.value(),
             preprocess_auto_smoothing=self.spin_auto_smooth.value(),
+            preprocess_auto_denoise=self.chk_auto_denoise.isChecked(),
+            gesture_confirm_frames=self.spin_confirm_frames.value(),
+            gesture_release_frames=self.spin_release_frames.value(),
             enable_actual_keypresses=self.chk_keypresses.isChecked(),
             enable_debug_output=self.chk_debug.isChecked(),
             key_forward=self.key_forward.get_key(),
@@ -646,13 +1087,17 @@ class MainWindow(QMainWindow):
     # Actions
     # ------------------------------------------------------------------
 
+    def _toggle_hints(self, visible: bool):
+        for widget in self.findChildren(QLabel):
+            if widget.property("is_hint"):
+                widget.setVisible(visible)
+
     def _restore_defaults(self):
         self._populate(GestureConfig())
 
     def _save_settings(self):
-        """Persist current widget state to config.json."""
         self._collect().to_json("config.json")
-        self.status_label.setText("Settings saved.")
+        self.status_label.setText("Settings saved")
 
     def _toggle_start_stop(self):
         if self.worker is not None and self.worker.isRunning():
@@ -673,10 +1118,16 @@ class MainWindow(QMainWindow):
         self.worker.start()
         self.pip_overlay.show()
 
-        self.btn_start.setText("Stop")
-        self.status_label.setText("Running...")
+        self.btn_start.setText("\u23f9 Stop")
+        self.btn_start.setStyleSheet(_BTN_DANGER)
+        self.status_label.setText("Running\u2026")
+        self.status_dot.setStyleSheet("color: #4ec9b0; font-size: 14px;")
+        self._dot_visible = True
+        self.status_dot.setVisible(True)
+        self._pulse_timer.start()
 
     def _stop(self):
+        self._pulse_timer.stop()
         if self.worker and self.worker.isRunning():
             self.worker.stop()
             self.worker.wait(5000)
@@ -684,20 +1135,34 @@ class MainWindow(QMainWindow):
             self.pip_overlay.hide()
             self.pip_overlay = None
         self.worker = None
-        self.btn_start.setText("Start")
+        self.btn_start.setText("\u25b6 Start")
+        self.btn_start.setStyleSheet(_BTN_PRIMARY)
         self.status_label.setText("Stopped")
+        self.status_dot.setStyleSheet("color: #858585; font-size: 14px;")
+        self.status_dot.setVisible(True)
 
     def _on_worker_error(self, message: str):
+        self._pulse_timer.stop()
+        self.status_dot.setStyleSheet("color: #f44747; font-size: 14px;")
+        self.status_dot.setVisible(True)
         self.status_label.setText(f"Error: {message}")
         self._stop()
 
     def _on_worker_stopped(self):
+        self._pulse_timer.stop()
         if self.pip_overlay:
             self.pip_overlay.hide()
             self.pip_overlay = None
         self.worker = None
-        self.btn_start.setText("Start")
+        self.btn_start.setText("\u25b6 Start")
+        self.btn_start.setStyleSheet(_BTN_PRIMARY)
         self.status_label.setText("Stopped")
+        self.status_dot.setStyleSheet("color: #858585; font-size: 14px;")
+        self.status_dot.setVisible(True)
+
+    def _pulse_dot(self):
+        self._dot_visible = not self._dot_visible
+        self.status_dot.setVisible(self._dot_visible)
 
     def closeEvent(self, event):
         self._stop()
@@ -710,6 +1175,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyleSheet(DARK_STYLESHEET)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

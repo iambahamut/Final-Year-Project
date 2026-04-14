@@ -21,19 +21,28 @@ class PipOverlay(QWidget):
             | Qt.WindowType.Tool
         )
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("border: 1px solid #0e9f8e;")
 
         self._drag_pos = None
 
         self._label = QLabel(self)
+        self._label.setStyleSheet("border: none;")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(1, 1, 1, 1)
         layout.addWidget(self._label)
 
     def update_frame(self, qimage: QImage):
         """Slot: receives a QImage and displays it as a pixmap."""
         pixmap = QPixmap.fromImage(qimage)
         self._label.setPixmap(pixmap)
-        self.resize(pixmap.size())
+        self.resize(pixmap.width() + 2, pixmap.height() + 2)
+
+    def enterEvent(self, event):
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+
+    def leaveEvent(self, event):
+        self.unsetCursor()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
