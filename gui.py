@@ -16,208 +16,205 @@ from config import GestureConfig
 from pip_overlay import CameraWorker, PipOverlay
 
 # ---------------------------------------------------------------------------
-# Dark theme
+# Light theme
 # ---------------------------------------------------------------------------
 
-DARK_STYLESHEET = """
+LIGHT_STYLESHEET = """
 QMainWindow, QWidget {
-    background-color: #1e1e1e;
-    color: #d4d4d4;
+    background-color: #f5f5f5;
+    color: #1a1a1a;
     font-family: "Segoe UI", sans-serif;
 }
-
 QTabWidget::pane {
-    border: 1px solid #3f3f46;
-    background: #1e1e1e;
+    border: 1px solid #d0d0d5;
+    background: #f5f5f5;
     top: -1px;
 }
-
 QTabBar::tab {
-    background: #252526;
-    color: #858585;
+    background: #ffffff;
+    color: #6b6b6b;
     padding: 12px 14px;
     border: none;
     border-bottom: 2px solid transparent;
 }
-
 QTabBar::tab:selected {
-    color: #d4d4d4;
-    border-bottom: 2px solid #0e9f8e;
-    background: #1e1e1e;
+    color: #1a1a1a;
+    border-bottom: 2px solid #0a8f80;
+    background: #f5f5f5;
 }
-
 QTabBar::tab:hover:!selected {
-    color: #d4d4d4;
-    background: #2d2d30;
+    color: #1a1a1a;
+    background: #efefef;
 }
-
 QGroupBox {
-    border: 1px solid #3f3f46;
+    border: 1px solid #d0d0d5;
     border-radius: 6px;
     margin-top: 12px;
     padding-top: 16px;
     font-weight: normal;
 }
-
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
     padding: 0 4px;
-    color: #858585;
+    color: #6b6b6b;
 }
-
 QPushButton {
-    background: #2d2d30;
-    color: #d4d4d4;
-    border: 1px solid #3f3f46;
+    background: #efefef;
+    color: #1a1a1a;
+    border: 1px solid #d0d0d5;
     border-radius: 4px;
     padding: 6px 12px;
 }
-
 QPushButton:hover {
-    background: #3f3f46;
+    background: #d0d0d5;
 }
-
 QPushButton:pressed {
-    background: #1e1e1e;
+    background: #f5f5f5;
 }
-
 QSpinBox, QDoubleSpinBox {
-    background: #252526;
-    color: #d4d4d4;
-    border: 1px solid #3f3f46;
+    background: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #d0d0d5;
     border-radius: 4px;
     padding: 4px;
     min-height: 20px;
 }
-
 QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 1px solid #0e9f8e;
+    border: 1px solid #0a8f80;
 }
-
-QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background: #efefef;
+    border-left: 1px solid #d0d0d5;
+    border-bottom: 1px solid #d0d0d5;
+    width: 20px;
+    subcontrol-position: top right;
+    subcontrol-origin: border;
+    border-top-right-radius: 4px;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {
+    background: #0a8f80;
+}
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed {
+    background: #0e9f8e;
+}
 QSpinBox::down-button, QDoubleSpinBox::down-button {
-    background: #2d2d30;
-    border: none;
-    width: 16px;
+    background: #efefef;
+    border-left: 1px solid #d0d0d5;
+    border-top: 1px solid #d0d0d5;
+    width: 20px;
+    subcontrol-position: bottom right;
+    subcontrol-origin: border;
+    border-bottom-right-radius: 4px;
 }
-
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: #0a8f80;
+}
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background: #0e9f8e;
+}
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 5px solid #d4d4d4;
-    width: 0;
-    height: 0;
+    image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iNCwxIDcsNyAxLDciIGZpbGw9IiMzMzMzMzMiLz48L3N2Zz4=");
+    width: 8px;
+    height: 8px;
 }
-
+QSpinBox::up-arrow:hover, QDoubleSpinBox::up-arrow:hover {
+    image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iNCwxIDcsNyAxLDciIGZpbGw9IiNmZmZmZmYiLz48L3N2Zz4=");
+}
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid #d4d4d4;
-    width: 0;
-    height: 0;
+    image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMSwxIDcsMSA0LDciIGZpbGw9IiMzMzMzMzMiLz48L3N2Zz4=");
+    width: 8px;
+    height: 8px;
 }
-
+QSpinBox::down-arrow:hover, QDoubleSpinBox::down-arrow:hover {
+    image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMSwxIDcsMSA0LDciIGZpbGw9IiNmZmZmZmYiLz48L3N2Zz4=");
+}
 QSlider::groove:horizontal {
     height: 4px;
-    background: #3f3f46;
+    background: #d0d0d5;
     border-radius: 2px;
 }
-
 QSlider::handle:horizontal {
     width: 10px;
     height: 10px;
     margin: -3px 0;
-    background: #0e9f8e;
+    background: #0a8f80;
     border-radius: 5px;
 }
-
 QSlider::sub-page:horizontal {
-    background: #0e9f8e;
+    background: #0a8f80;
     border-radius: 2px;
     height: 4px;
 }
-
 QCheckBox {
-    color: #d4d4d4;
+    color: #1a1a1a;
     spacing: 6px;
 }
-
 QCheckBox::indicator {
     width: 16px;
     height: 16px;
-    border: 1px solid #3f3f46;
+    border: 1px solid #d0d0d5;
     border-radius: 3px;
-    background: #252526;
+    background: #ffffff;
 }
-
 QCheckBox::indicator:checked {
-    background: #0e9f8e;
-    border-color: #0e9f8e;
+    background: #0a8f80;
+    border-color: #0a8f80;
 }
-
 QCheckBox::indicator:hover {
-    border-color: #0e9f8e;
+    border-color: #0a8f80;
 }
-
 QScrollArea {
     border: none;
     background: transparent;
 }
-
 QScrollArea > QWidget > QWidget {
     background: transparent;
 }
-
 QScrollBar:vertical {
-    background: #1e1e1e;
+    background: #f5f5f5;
     width: 8px;
     margin: 0;
 }
-
 QScrollBar::handle:vertical {
-    background: #3f3f46;
+    background: #d0d0d5;
     border-radius: 4px;
     min-height: 20px;
 }
-
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0;
 }
-
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: none;
 }
-
 QToolTip {
-    background: #252526;
-    color: #d4d4d4;
-    border: 1px solid #3f3f46;
+    background: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #d0d0d5;
     padding: 6px 8px;
     font-size: 8pt;
 }
-
 QLabel {
     background: transparent;
 }
 """
 
 _BTN_PRIMARY = (
-    "background: #0e9f8e; color: white; font-weight: bold;"
-    "border: 1px solid #0c8070; border-radius: 4px; padding: 6px 12px;"
+    "background: #0a8f80; color: white; font-weight: bold;"
+    "border: 1px solid #0e9f8e; border-radius: 4px; padding: 6px 12px;"
 )
+
 _BTN_DANGER = (
-    "background: #c0392b; color: white; font-weight: bold;"
-    "border: 1px solid #a93226; border-radius: 4px; padding: 6px 12px;"
+    "background: #e04535; color: white; font-weight: bold;"
+    "border: 1px solid #c0392b; border-radius: 4px; padding: 6px 12px;"
 )
+
 _COLLAPSIBLE_STYLE = (
-    "QPushButton { text-align: left; background: #252526;"
-    "border: 1px solid #3f3f46; border-radius: 6px;"
-    "padding: 8px 12px; color: #858585; }"
-    "QPushButton:hover { background: #2d2d30; color: #d4d4d4; }"
-    "QPushButton:checked { color: #d4d4d4; border-color: #0e9f8e; }"
+    "QPushButton { text-align: left; background: #ffffff;"
+    "border: 1px solid #d0d0d5; border-radius: 6px;"
+    "padding: 8px 12px; color: #6b6b6b; }"
+    "QPushButton:hover { background: #efefef; color: #1a1a1a; }"
+    "QPushButton:checked { color: #1a1a1a; border-color: #0a8f80; }"
 )
 
 # ---------------------------------------------------------------------------
@@ -264,8 +261,8 @@ def _stacked_label(name: str, hint: str = "") -> QWidget:
     layout.addWidget(name_lbl)
 
     if hint:
-        icon_lbl = QLabel("\u24d8")
-        icon_lbl.setStyleSheet("color: #555555; font-size: 10px;")
+        icon_lbl = QLabel("ⓘ")
+        icon_lbl.setStyleSheet("color: #8888a0; font-size: 10px;")
         icon_lbl.setToolTip(hint)
         icon_lbl.setCursor(Qt.CursorShape.WhatsThisCursor)
         icon_lbl.setProperty("is_hint", True)
@@ -300,8 +297,8 @@ class CollapsibleSection(QWidget):
         main.addWidget(self._content)
 
     def _update_arrow(self, expanded: bool):
-        arrow = "\u25bc" if expanded else "\u25b6"
-        self._toggle.setText(f"{arrow}  {self._title}")
+        arrow = "▼" if expanded else "▶"
+        self._toggle.setText(f"{arrow} {self._title}")
 
     def _on_toggle(self, checked: bool):
         self._content.setVisible(checked)
@@ -338,10 +335,10 @@ class KeyCaptureButton(QPushButton):
     def _start_listening(self):
         self._listening = True
         self._listen_start_time = time.time()
-        self.setText("Press a key\u2026")
+        self.setText("Press a key…")
         self.setStyleSheet(
-            "background-color: #0e9f8e; color: white;"
-            "border: 1px solid #0e9f8e; border-radius: 4px; padding: 6px 12px;"
+            "background-color: #0a8f80; color: white;"
+            "border: 1px solid #077568; border-radius: 4px; padding: 6px 12px;"
         )
         self.grabKeyboard()
 
@@ -407,8 +404,8 @@ class ColorPickerButton(QPushButton):
         hex_color = f"#{r:02x}{g:02x}{b:02x}".upper()
         self.setStyleSheet(
             f"QPushButton {{ background-color: rgb({r},{g},{b});"
-            f"  border: 1px solid #888; border-radius: 4px; }}"
-            f"QPushButton:hover {{ border: 1px solid #0e9f8e; }}"
+            f" border: 1px solid #888; border-radius: 4px; }}"
+            f"QPushButton:hover {{ border: 1px solid #0a8f80; }}"
         )
         self.setToolTip(hex_color)
 
@@ -459,7 +456,7 @@ def _make_confidence_row(name: str, hint: str, value: float):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Gesture Recognition \u2014 Settings")
+        self.setWindowTitle("Gesture Recognition — Settings")
         self.setMinimumWidth(520)
         self.setMaximumWidth(680)
         self._set_window_icon()
@@ -474,12 +471,12 @@ class MainWindow(QMainWindow):
         save_row = QHBoxLayout()
         self.chk_show_hints = QCheckBox("Show hints")
         self.chk_show_hints.setChecked(True)
-        self.chk_show_hints.setStyleSheet("color: #858585; font-size: 8pt;")
+        self.chk_show_hints.setStyleSheet("color: #6b6b6b; font-size: 8pt;")
         self.chk_show_hints.toggled.connect(self._toggle_hints)
         save_row.addWidget(self.chk_show_hints)
         save_row.addStretch()
-        self.btn_save = QPushButton("\U0001f4be")
-        self.btn_save.setFixedSize(32, 32)
+        self.btn_save = QPushButton("💾 Save Settings")
+        self.btn_save.setMinimumWidth(120)
         self.btn_save.setToolTip("Save settings (Ctrl+S)")
         self.btn_save.clicked.connect(self._save_settings)
         save_row.addWidget(self.btn_save)
@@ -499,15 +496,15 @@ class MainWindow(QMainWindow):
 
         # Bottom bar
         bottom = QHBoxLayout()
-        self.btn_defaults = QPushButton("\U0001f504 Restore Defaults")
+        self.btn_defaults = QPushButton("🔄 Restore Defaults")
         self.btn_defaults.clicked.connect(self._restore_defaults)
         bottom.addWidget(self.btn_defaults)
         bottom.addStretch()
 
         status_row = QHBoxLayout()
         status_row.setSpacing(6)
-        self.status_dot = QLabel("\u25cf")
-        self.status_dot.setStyleSheet("color: #858585; font-size: 14px;")
+        self.status_dot = QLabel("●")
+        self.status_dot.setStyleSheet("color: #6b6b6b; font-size: 14px;")
         self.status_label = QLabel("Ready")
         status_row.addWidget(self.status_dot)
         status_row.addWidget(self.status_label)
@@ -515,7 +512,7 @@ class MainWindow(QMainWindow):
 
         bottom.addStretch()
 
-        self.btn_start = QPushButton("\u25b6 Start")
+        self.btn_start = QPushButton("▶ Start")
         self.btn_start.setFixedWidth(110)
         self.btn_start.setStyleSheet(_BTN_PRIMARY)
         self.btn_start.clicked.connect(self._toggle_start_stop)
@@ -539,7 +536,7 @@ class MainWindow(QMainWindow):
         pixmap.fill(QColor(0, 0, 0, 0))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor("#0e9f8e"))
+        painter.setBrush(QColor("#0a8f80"))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(2, 2, 28, 28)
         painter.end()
@@ -567,10 +564,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_detection_tab(self):
-        layout = self._make_scrollable_tab("\U0001f3a5 Detection")
+        layout = self._make_scrollable_tab("🎥 Detection")
 
         # -- Camera Input (always visible) --
-        cam_group = QGroupBox("\U0001f4f7 Camera Input")
+        cam_group = QGroupBox("📷 Camera Input")
         cam_form = QFormLayout(cam_group)
         cam_form.setVerticalSpacing(8)
 
@@ -600,7 +597,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(cam_group)
 
         # -- MediaPipe Confidence (collapsed) --
-        self._sec_confidence = CollapsibleSection("\U0001f9e0 MediaPipe Confidence")
+        self._sec_confidence = CollapsibleSection("🧠 MediaPipe Confidence")
         conf_inner = self._sec_confidence.content_widget()
         conf_layout = QVBoxLayout(conf_inner)
         conf_layout.setContentsMargins(8, 8, 8, 8)
@@ -629,7 +626,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._sec_confidence)
 
         # -- Frame Preprocessing (collapsed) --
-        self._sec_preprocess = CollapsibleSection("\U0001f317 Frame Preprocessing")
+        self._sec_preprocess = CollapsibleSection("🌗 Frame Preprocessing")
         pp_form = self._sec_preprocess.form_layout()
 
         self.chk_clahe = QCheckBox("Enable CLAHE")
@@ -700,19 +697,19 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
     # ------------------------------------------------------------------
-    # Tab 2: Gestures  (all collapsible — advanced tuning)
+    # Tab 2: Gestures
     # ------------------------------------------------------------------
 
     def _build_gestures_tab(self):
-        layout = self._make_scrollable_tab("\U0001f3af Gestures")
+        layout = self._make_scrollable_tab("🎯 Gestures")
 
         hint = QLabel("Fine-tune gesture detection. Default values work well for most setups.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #858585; padding: 4px 0;")
+        hint.setStyleSheet("color: #6b6b6b; padding: 4px 0;")
         layout.addWidget(hint)
 
         # -- Left Hand — Movement (collapsed) --
-        self._sec_left_hand = CollapsibleSection("\U0001f590\ufe0f Left Hand \u2014 Movement")
+        self._sec_left_hand = CollapsibleSection("🖐️ Left Hand — Movement")
         lh_form = self._sec_left_hand.form_layout()
 
         self.spin_palm_ext = QDoubleSpinBox()
@@ -771,7 +768,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._sec_left_hand)
 
         # -- Right Hand — Gestures (collapsed) --
-        self._sec_right_hand = CollapsibleSection("\u270b Right Hand \u2014 Gestures")
+        self._sec_right_hand = CollapsibleSection("✋ Right Hand — Gestures")
         rh_form = self._sec_right_hand.form_layout()
 
         self.spin_pinch_dist = QDoubleSpinBox()
@@ -795,7 +792,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._sec_right_hand)
 
         # -- Debounce Timing (collapsed) --
-        self._sec_debounce = CollapsibleSection("\u23f1\ufe0f Debounce Timing")
+        self._sec_debounce = CollapsibleSection("⏱️ Debounce Timing")
         db_form = self._sec_debounce.form_layout()
 
         self.spin_confirm_frames = QSpinBox()
@@ -822,17 +819,17 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
     # ------------------------------------------------------------------
-    # Tab 3: Bindings  (key mapping — always visible)
+    # Tab 3: Bindings
     # ------------------------------------------------------------------
 
     def _build_bindings_tab(self):
-        layout = self._make_scrollable_tab("\u2328\ufe0f Bindings")
+        layout = self._make_scrollable_tab("⌨️ Bindings")
 
         info = QLabel("Click a button then press any key or mouse button to remap it.")
         info.setWordWrap(True)
         info.setStyleSheet(
-            "background: #252526; border-left: 2px solid #0e9f8e;"
-            "padding: 6px 8px; color: #858585;"
+            "background: #e8f5f3; border-left: 2px solid #0a8f80;"
+            "padding: 6px 8px; color: #6b6b6b;"
         )
         layout.addWidget(info)
 
@@ -842,7 +839,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.chk_debug)
 
         # WASD keys
-        group = QGroupBox("\u2328\ufe0f Key Mapping")
+        group = QGroupBox("⌨️ Key Mapping")
         form = QFormLayout(group)
 
         self.key_forward = KeyCaptureButton("w")
@@ -858,7 +855,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(group)
 
         # Right-hand gesture keys
-        gesture_group = QGroupBox("\U0001f90f Right-Hand Gesture Keys")
+        gesture_group = QGroupBox("🤏 Right-Hand Gesture Keys")
         gesture_form = QFormLayout(gesture_group)
 
         self.chk_right_gestures = QCheckBox("Enable Right-Hand Gestures")
@@ -878,14 +875,14 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
     # ------------------------------------------------------------------
-    # Tab 4: Display  (PiP + overlay basics visible, rest collapsed)
+    # Tab 4: Display
     # ------------------------------------------------------------------
 
     def _build_display_tab(self):
-        layout = self._make_scrollable_tab("\U0001f5a5\ufe0f Display")
+        layout = self._make_scrollable_tab("🖥️ Display")
 
         # -- PiP (always visible) --
-        pip_group = QGroupBox("\U0001f5bc\ufe0f Picture-in-Picture")
+        pip_group = QGroupBox("🖼️ Picture-in-Picture")
         pip_form = QFormLayout(pip_group)
         pip_form.setVerticalSpacing(8)
 
@@ -901,11 +898,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(pip_group)
 
         # -- WASD overlay toggle (always visible) --
-        self.chk_wasd_overlay = QCheckBox("\U0001f3ae WASD Overlay Enabled")
+        self.chk_wasd_overlay = QCheckBox("🎮 WASD Overlay Enabled")
         layout.addWidget(self.chk_wasd_overlay)
 
         # -- WASD overlay layout (collapsed) --
-        self._sec_overlay = CollapsibleSection("\U0001f3ae WASD Overlay Layout")
+        self._sec_overlay = CollapsibleSection("🎮 WASD Overlay Layout")
         ov_form = self._sec_overlay.form_layout()
 
         self.spin_key_size = QSpinBox()
@@ -943,7 +940,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._sec_overlay)
 
         # -- Colors (collapsed) --
-        self._sec_colors = CollapsibleSection("\U0001f3a8 Colors")
+        self._sec_colors = CollapsibleSection("🎨 Colors")
         color_form = self._sec_colors.form_layout()
 
         self.color_left_hand = ColorPickerButton([255, 0, 0])
@@ -1118,10 +1115,10 @@ class MainWindow(QMainWindow):
         self.worker.start()
         self.pip_overlay.show()
 
-        self.btn_start.setText("\u23f9 Stop")
+        self.btn_start.setText("⏹ Stop")
         self.btn_start.setStyleSheet(_BTN_DANGER)
-        self.status_label.setText("Running\u2026")
-        self.status_dot.setStyleSheet("color: #4ec9b0; font-size: 14px;")
+        self.status_label.setText("Running…")
+        self.status_dot.setStyleSheet("color: #0a8f80; font-size: 14px;")
         self._dot_visible = True
         self.status_dot.setVisible(True)
         self._pulse_timer.start()
@@ -1135,15 +1132,15 @@ class MainWindow(QMainWindow):
             self.pip_overlay.hide()
             self.pip_overlay = None
         self.worker = None
-        self.btn_start.setText("\u25b6 Start")
+        self.btn_start.setText("▶ Start")
         self.btn_start.setStyleSheet(_BTN_PRIMARY)
         self.status_label.setText("Stopped")
-        self.status_dot.setStyleSheet("color: #858585; font-size: 14px;")
+        self.status_dot.setStyleSheet("color: #6b6b6b; font-size: 14px;")
         self.status_dot.setVisible(True)
 
     def _on_worker_error(self, message: str):
         self._pulse_timer.stop()
-        self.status_dot.setStyleSheet("color: #f44747; font-size: 14px;")
+        self.status_dot.setStyleSheet("color: #d93025; font-size: 14px;")
         self.status_dot.setVisible(True)
         self.status_label.setText(f"Error: {message}")
         self._stop()
@@ -1154,10 +1151,10 @@ class MainWindow(QMainWindow):
             self.pip_overlay.hide()
             self.pip_overlay = None
         self.worker = None
-        self.btn_start.setText("\u25b6 Start")
+        self.btn_start.setText("▶ Start")
         self.btn_start.setStyleSheet(_BTN_PRIMARY)
         self.status_label.setText("Stopped")
-        self.status_dot.setStyleSheet("color: #858585; font-size: 14px;")
+        self.status_dot.setStyleSheet("color: #6b6b6b; font-size: 14px;")
         self.status_dot.setVisible(True)
 
     def _pulse_dot(self):
@@ -1175,7 +1172,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyleSheet(DARK_STYLESHEET)
+    app.setStyleSheet(LIGHT_STYLESHEET)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
