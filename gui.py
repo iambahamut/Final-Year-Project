@@ -46,6 +46,9 @@ QTabBar::tab:hover:!selected {
     color: #1a1a1a;
     background: #efefef;
 }
+QSpinBox, QDoubleSpinBox {
+    min-height: 28px;
+}
 QGroupBox {
     border: 1px solid #d0d0d5;
     border-radius: 6px;
