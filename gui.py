@@ -12,6 +12,9 @@ from PyQt6.QtGui import (
     QShortcut, QKeySequence,
 )
 
+from config import GestureConfig
+from pip_overlay import CameraWorker, PipOverlay
+
 # Common aspect ratios → (ratio_w, ratio_h, preset widths)
 _ASPECT_RATIOS = {
     "16:9": (16, 9, [640, 854, 1280, 1600, 1920, 2560, 3840]),
@@ -42,9 +45,6 @@ def _list_cameras():
             cams.append((i, f"Camera {i}"))
             cap.release()
     return cams
-
-from config import GestureConfig
-from pip_overlay import CameraWorker, PipOverlay
 
 # ---------------------------------------------------------------------------
 # Light theme
