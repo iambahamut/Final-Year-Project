@@ -87,6 +87,13 @@ class GestureConfig:
     wasd_text_color_inactive: list = field(default_factory=lambda: [180, 180, 180])
     wasd_text_color_active: list = field(default_factory=lambda: [0, 0, 0])
 
+    # Performance metrics logging (off by default; harness for evaluation)
+    enable_metrics_logging: bool = False
+    metrics_output_dir: str = "logs"
+    metrics_session_label: str = "default"
+    metrics_fps_window: int = 100
+    metrics_initial_lighting: str = "normal"
+
     def to_json(self, path: str):
         with open(path, "w") as f:
             json.dump(asdict(self), f, indent=2)
